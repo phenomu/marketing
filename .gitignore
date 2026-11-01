@@ -11,3 +11,5 @@ TRACKER.md
 PROMPT.md
 README-PRIV.md
 AGENTS.md
+logs/
+.pytest_cache/

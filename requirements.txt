@@ -1,8 +1,15 @@
-requests
-beautifulsoup4
-lxml
+# Core runtime — backend, crawler worker, scheduler, dashboard, native dev.
+# Same list is installed inside the Docker image (see Dockerfile) so both
+# execution modes share identical dependencies.
+requests>=2.32
+beautifulsoup4>=4.12
+lxml>=5.0
+PyYAML>=6.0
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2
 py3dns
 
-# opsional:
-# serpapi
-# playwright
+# Services
+fastapi>=0.115
+uvicorn>=0.30
+streamlit>=1.38
