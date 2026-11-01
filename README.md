@@ -1,55 +1,96 @@
 # MARKETING
 
-Lead-generation + email outreach toolkit. Scrape business contacts dari Google (Maps/Search) dan sumber lainnya, ekstrak email, lalu kirim email promosi.
+Lead generation + email outreach toolkit. Kumpulkan data bisnis dari berbagai sumber, cari email kontak dari website mereka, validasi, lalu kelola campaign email (mode dry-run secara default).
 
-## Arsitektur (Rencana)
+**Status: tahap awal — belum ada aplikasi yang bisa dijalankan. Bagian di bawah menggambarkan rencana arsitektur dan fitur target, bukan fitur yang sudah jadi.**
+
+## 1. Gambaran Proyek
+
+- **Masalah yang dipecahkan**: mencari calon pelanggan (lead) secara manual itu lambat — proyek ini mengotomatiskan rantai: temukan bisnis → cari kontak → validasi → outreach.
+- **Tujuan utama**: pipeline data terverifikasi (bisnis + email valid) untuk keperluan promosi.
+- **Kemampuan target**: business discovery multi-sumber, crawling website untuk kontak, ekstraksi + validasi email, pengelolaan lead, campaign email dengan dry-run.
+
+## 2. Fitur
+
+Sudah diimplementasikan: tidak ada — repo saat ini berisi scaffolding + dokumentasi tata kelola.
+
+Direncanakan:
+
+- Business discovery (keyword/lokasi, multi sumber)
+- Crawling website (kontak, about, footer)
+- Ekstraksi email/telepon/sosmed
+- Validasi email (sintaks, domain, MX)
+- Lead management + scoring + export CSV
+- Campaign email: template, personalisasi, dry-run, unsubscribe, suppression list
+- Reporting/analytics
+
+## 3. Arsitektur
 
 ```
 marketing/
+├── AGENTS.md               # aturan operasi agent
 ├── README.md
-├── requirements.txt        # dependensi Python
-├── config/                 # konfigurasi (keywords, target, SMTP)
-├── scrapers/
-│   ├── google_maps.py      # scraper Google Maps (nama, alamat, website, telepon)
-│   ├── google_search.py    # scraper Google Search (bisa via SerpAPI / dork)
-│   └── generic.py          # scraper website umum (kontak page, footer)
-├── extractors/
-│   ├── email_extractor.py  # regex + validasi email dari HTML/teks
-│   └── enrich.py           # tambah data: LinkedIn, sosmed, dsb (opsional)
-├── outreach/
-│   ├── templates/          # template email promosi (plain text / HTML)
-│   ├── mailer.py           # kirim email via SMTP (batch, delay acak)
-│   └── followup.py         # sekuens follow-up otomatis
-├── data/
-│   ├── raw/                # hasil scrape mentah (JSON/CSV)
-│   ├── leads.csv           # database leads: company, email, status
-│   └── sent.log            # log email terkirim (hindari dobel kirim)
-├── scripts/
-│   └── dedupe.py           # bersihkan duplikat + validasi email
+├── requirements.txt
+├── config/                 # settings loader, keywords, logging
+├── scrapers/               # adapter sumber data (Maps/search/direktori)
+├── extractors/             # ekstraksi kontak dari HTML
+├── outreach/               # mailer SMTP, template, follow-up
+├── data/                   # output mentah + leads (TIDAK di-commit)
+├── scripts/                # entrypoint CLI
 └── tests/
 ```
 
-## Alur Kerja
+Alur data: source adapter → business discovery → crawler → contact extraction → validation → lead store → outreach engine (dry-run default) → reporting.
 
-1. **Scrape** — kumpulkan daftar bisnis/website target dari Google Maps/Search atau direktori lain. Input: keyword + lokasi (mis. `"kedai kopi" "Jakarta"`).
-2. **Ekstrak** — kunjungi tiap website, cari email di halaman kontak/about/footer (regex `[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`).
-3. **Bersihkan** — dedupe, buang role-based email jika perlu (`noreply@`, `postmaster@`), validasi MX record.
-4. **Outreach** — kirim email promosi pakai SMTP, personalisasi (nama bisnis, kota), jeda acak antar-kirim supaya tidak kena spam-flag.
-5. **Follow-up** — 2-3 follow-up terjadwal untuk yang belum balas.
+Database: SQLite untuk development, PostgreSQL direncanakan untuk produksi (belum diimplementasikan).
 
-## Status
+## 4. Sumber Data yang Direncanakan
 
-- [ ] requirements.txt + scaffolding modul
-- [ ] Scraper Google Maps
-- [ ] Scraper Google Search
-- [ ] Ekstraktor email
-- [ ] Validasi + dedupe leads
-- [ ] Mailer SMTP + template
-- [ ] Follow-up otomatis
-- [ ] Log & reporting
+| Sumber | Peruntungan | Status |
+|---|---|---|
+| Google Places API | Discovery bisnis per lokasi | Belum |
+| Search API resmi (mis. SerpAPI) | Discovery website bisnis | Belum |
+| Direktori bisnis (dengan izin) | Data tambahan | Belum |
+| Open data | Data publik | Belum |
+| Import CSV/JSON/XLSX | Data milik sendiri | Belum |
 
-## Catatan Legal
+## 5. Teknologi
 
-- Kirim email promosi wajib patuhi peraturan: identitas pengirim jelas, subjek tidak menyesatkan, sediakan opsi berhenti berlangganan (unsubscribe). (Indonesia: UU ITE & PERPU / UU PDP; kalau target Eropa: GDPR.)
-- Jangan scrape berlebihan — beri delay antar-request, hormati robots.txt dan ToS layanan.
-- Gunakan domain + SMTP khusus outreach untuk melindungi reputasi domain utama.
+Python 3, `requests`, `beautifulsoup4`, `lxml`, `pyyaml` (lihat `requirements.txt`). Belum ada dependency lain yang terintegrasi.
+
+## 6. Instalasi
+
+Belum bisa dijalankan sebagai aplikasi. Setup saat ini:
+
+```bash
+git clone git@github.com:phenomu/marketing.git
+cd marketing
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Bagian usage akan diisi setelah modul pertama ada.
+
+## 7. Konfigurasi
+
+Variabel environment yang direncanakan (tanpa nilai rahasia di repo): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SENDER_NAME`. File `.env` tidak di-commit; contoh nanti di `.env.example`.
+
+## 8. Penggunaan
+
+Belum ada perintah yang bisa dijalankan.
+
+## 9. Kepatuhan & Penggunaan yang Bertanggung Jawab
+
+- Data source: patuhi ToS layanan dan robots.txt; jangan bypass CAPTCHA/anti-bot.
+- Email: identitas pengirim jelas, subjek tidak menyesatkan, wajib ada mekanisme unsubscribe dan suppression list; rate limit pengiriman.
+- Regulasi yang relevan untuk target Indonesia: UU ITE, UU PDP; target Eropa: GDPR.
+- Kirim nyata hanya dengan otorisasi eksplisit; mode DRY RUN adalah default.
+
+## 10. Development
+
+Aturan kerja untuk agent/manusia kontributor ada di `AGENTS.md`. Test dijalankan dari `tests/` (belum ada). Bahasa dokumentasi: Indonesia; kode dan identifier: Inggris.
+
+## 11. Lisensi
+
+Belum ditentukan.

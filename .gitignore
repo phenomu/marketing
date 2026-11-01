@@ -4,4 +4,9 @@ data/sent.log
 __pycache__/
 *.pyc
 .env
+.venv/
+*.sqlite3
+*.db
 TRACKER.md
+PROMPT.md
+README-PRIV.md
