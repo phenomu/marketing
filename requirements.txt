@@ -1,0 +1,8 @@
+requests
+beautifulsoup4
+lxml
+py3dns
+
+# opsional:
+# serpapi
+# playwright
