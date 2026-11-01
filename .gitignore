@@ -4,3 +4,4 @@ data/sent.log
 __pycache__/
 *.pyc
 .env
+TRACKER.md
