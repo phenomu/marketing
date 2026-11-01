@@ -1,0 +1,60 @@
+# MARKETING — production overrides (combine with docker-compose.yml):
+#
+#   docker compose --env-file .env -f docker-compose.yml -f docker-compose.prod.yml \
+#     --profile full up -d --build
+#
+# Differences vs dev:
+#   - db: no host port (app talks over the compose network only)
+#   - state in NAMED volumes (pgdata, applogs, appdata) instead of host bind mounts
+#   - restart: always + memory limits
+#   - image tagged marketing-app:prod
+#   - APP_ENV forced to production
+# Separation: run with a different project name so dev/prod never share volumes:
+#   ... -p marketing-prod ...
+
+x-prod-state: &prod-state
+  volumes: !override
+    - applogs:/app/logs
+    - appdata:/app/data
+
+services:
+  db:
+    ports: !override []
+    restart: !override always
+    mem_limit: 512m
+
+  api:
+    <<: *prod-state
+    image: marketing-app:prod
+    environment:
+      APP_ENV: production
+    restart: always
+    mem_limit: 256m
+
+  worker:
+    <<: *prod-state
+    image: marketing-app:prod
+    environment:
+      APP_ENV: production
+    restart: always
+    mem_limit: 512m
+
+  scheduler:
+    <<: *prod-state
+    image: marketing-app:prod
+    environment:
+      APP_ENV: production
+    restart: always
+    mem_limit: 128m
+
+  dashboard:
+    <<: *prod-state
+    image: marketing-app:prod
+    environment:
+      APP_ENV: production
+    restart: always
+    mem_limit: 512m
+
+volumes:
+  applogs:
+  appdata:

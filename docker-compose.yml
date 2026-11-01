@@ -1,0 +1,127 @@
+# MARKETING — orchestration (OPTIONAL; native Python dev stays fully supported)
+#
+# Hybrid default: `docker compose up -d` starts ONLY PostgreSQL, the app runs native.
+# Full stack:      `docker compose --profile full up -d`
+# One service:     `docker compose --profile api|worker|scheduler|dashboard up -d`
+# Production:      `docker compose --env-file .env.prod -f docker-compose.yml \
+#                     -f docker-compose.prod.yml --profile full up -d`
+#
+# All values come from the env file (never hardcoded secrets — see .env.example).
+
+name: marketing
+
+x-app-base: &app-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: marketing-app
+  volumes:
+    - ./logs:/app/logs
+    - ./data:/app/data
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: marketing-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-marketing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-marketing}
+    ports:
+      - "${POSTGRES_BIND:-127.0.0.1:5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marketing} -d ${POSTGRES_DB:-marketing}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    <<: *app-base
+    profiles: [full, api]
+    command: uvicorn app.main:api --host 0.0.0.0 --port 8000
+    environment: &app-env
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DRY_RUN: ${DRY_RUN:-true}
+      POSTGRES_USER: ${POSTGRES_USER:-marketing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-marketing}
+      POSTGRES_HOST: db # service-network name; native uses 127.0.0.1 from .env
+      POSTGRES_PORT: 5432
+      WORKER_INTERVAL_S: ${WORKER_INTERVAL_S:-30}
+      SCHEDULER_INTERVAL_S: ${SCHEDULER_INTERVAL_S:-60}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SENDER_NAME: ${SENDER_NAME:-MARKETING}
+    ports:
+      - "${API_BIND:-127.0.0.1:8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+  worker:
+    <<: *app-base
+    profiles: [full, worker]
+    command: python -m app.worker
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "scripts/heartbeat_check.py", "worker"]
+      interval: 15s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  scheduler:
+    <<: *app-base
+    profiles: [full, scheduler]
+    command: python -m app.scheduler
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "scripts/heartbeat_check.py", "scheduler"]
+      interval: 15s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  dashboard:
+    <<: *app-base
+    profiles: [full, dashboard]
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    environment:
+      <<: *app-env
+      BACKEND_URL: ${DASHBOARD_BACKEND_URL:-http://api:8000} # container network default
+      STREAMLIT_SERVER_HEADLESS: "true"
+      STREAMLIT_BROWSER_GATHERUSAGESTATS: "false"
+    ports:
+      - "${DASHBOARD_BIND:-127.0.0.1:8501}:8501"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+volumes:
+  pgdata:
