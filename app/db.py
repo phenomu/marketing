@@ -12,13 +12,16 @@ import logging
 from functools import lru_cache
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Float,
+    ForeignKey,
     Integer,
     MetaData,
     String,
     Table,
+    Text,
     create_engine,
     text,
 )
@@ -28,7 +31,7 @@ from config import settings
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.3"
 
 METADATA = MetaData()
 
@@ -55,6 +58,7 @@ BUSINESSES = Table(
     Column("longitude", Float),
     Column("rating", Float),
     Column("review_count", Integer),
+    Column("industry_match", Boolean, default=False, nullable=False),  # industries.yaml
     Column("first_seen_at", DateTime, default=_utcnow),
     Column("last_seen_at", DateTime, default=_utcnow, onupdate=_utcnow),
 )
@@ -75,6 +79,37 @@ DISCOVERY_JOBS = Table(
     Column("created_at", DateTime, default=_utcnow),
     Column("started_at", DateTime),
     Column("finished_at", DateTime),
+)
+
+
+CRAWL_JOBS = Table(
+    "crawl_jobs",
+    METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("domain", String(255), nullable=False, unique=True, index=True),
+    Column("status", String(16), default="pending"),  # pending|running|done|failed
+    Column("pages_crawled", Integer, default=0),
+    Column("contact_url", String(512), default=""),
+    Column("about_url", String(512), default=""),
+    Column("mailto_count", Integer, default=0),
+    Column("error", String(2000), default=""),
+    Column("queued_at", DateTime, default=_utcnow),
+    Column("started_at", DateTime),
+    Column("finished_at", DateTime),
+)
+
+CRAWL_PAGES = Table(
+    "crawl_pages",
+    METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("crawl_job_id", Integer, ForeignKey("crawl_jobs.id"), nullable=False, index=True),
+    Column("url", String(512), nullable=False),
+    Column("kind", String(16), default="other"),  # home|contact|about|other
+    Column("http_status", Integer),
+    Column("fetched_ok", Boolean, default=False),
+    Column("title", String(512), default=""),
+    Column("text", Text, default=""),  # visible text for PHASE 4 extraction
+    Column("fetched_at", DateTime, default=_utcnow),
 )
 
 
@@ -111,9 +146,12 @@ def check_db() -> bool:
 
 
 def init_db() -> str:
-    """Create the minimal schema and stamp schema_version. Idempotent."""
+    """Create the schema and stamp schema_version. Idempotent; on existing
+    databases it also applies additive migrations (new tables/columns
+    from older schema versions — see _MIGRATIONS)."""
     engine = get_engine()
     METADATA.create_all(engine)
+
     with engine.begin() as conn:
         current = conn.execute(
             text("SELECT value FROM app_meta WHERE key = 'schema_version'")
@@ -121,6 +159,9 @@ def init_db() -> str:
         if current is None:
             conn.execute(APP_META.insert().values(key="schema_version", value=SCHEMA_VERSION))
         elif current != SCHEMA_VERSION:
+            if current in _MIGRATIONS:
+                for stmt in _MIGRATIONS[current]:
+                    conn.execute(text(stmt))
             conn.execute(
                 APP_META.update()
                 .where(APP_META.c.key == "schema_version")
@@ -128,6 +169,15 @@ def init_db() -> str:
             )
     log.info("database initialized (schema_version=%s, url=%s)", SCHEMA_VERSION, _safe_url())
     return SCHEMA_VERSION
+
+
+# Additive migrations applied when upgrading an existing database.
+# SQLite/PG both accept these statements (ADD COLUMN only).
+_MIGRATIONS: dict[str, tuple[str, ...]] = {
+    "0.2": (
+        "ALTER TABLE businesses ADD COLUMN industry_match BOOLEAN NOT NULL DEFAULT false",
+    ),
+}
 
 
 def _safe_url() -> str:

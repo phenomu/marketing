@@ -82,6 +82,12 @@ class Settings:
     gmaps_gl: str
     worker_interval_s: int
     scheduler_interval_s: int
+    crawl_delay_s: float
+    crawl_max_pages: int
+    crawl_timeout_s: int
+    crawl_retries: int
+    crawl_user_agent: str
+    crawl_batch_limit: int
 
     @property
     def is_production(self) -> bool:
@@ -133,6 +139,15 @@ def build_settings() -> Settings:
         gmaps_gl=get("GMAPS_GL", "id"),
         worker_interval_s=get_int("WORKER_INTERVAL_S", 30),
         scheduler_interval_s=get_int("SCHEDULER_INTERVAL_S", 60),
+        crawl_delay_s=float(get("CRAWL_DELAY_S", "5")),
+        crawl_max_pages=get_int("CRAWL_MAX_PAGES", 10),
+        crawl_timeout_s=get_int("CRAWL_TIMEOUT_S", 15),
+        crawl_retries=get_int("CRAWL_RETRIES", 2),
+        crawl_user_agent=get(
+            "CRAWL_USER_AGENT",
+            "marketing-research-bot/0.1 (+contact discovery; respects robots.txt)",
+        ),
+        crawl_batch_limit=get_int("CRAWL_BATCH_LIMIT", 5),
     )
 
 
