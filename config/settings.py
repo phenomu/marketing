@@ -72,6 +72,14 @@ class Settings:
     smtp_pass: str
     sender_name: str
     dry_run: bool
+    lead_source: str
+    google_places_api_key: str
+    serpapi_api_key: str
+    scrape_delay_s: float
+    scrape_timeout_s: int
+    scrape_max_results: int
+    gmaps_hl: str
+    gmaps_gl: str
     worker_interval_s: int
     scheduler_interval_s: int
 
@@ -115,6 +123,14 @@ def build_settings() -> Settings:
         smtp_pass=get("SMTP_PASS", ""),
         sender_name=get("SENDER_NAME", "MARKETING"),
         dry_run=get_bool("DRY_RUN", True),
+        lead_source=get("LEAD_SOURCE", "gmaps_scrape").strip().lower(),
+        google_places_api_key=get("GOOGLE_PLACES_API_KEY", "").strip(),
+        serpapi_api_key=get("SERPAPI_KEY", "").strip(),
+        scrape_delay_s=float(get("SCRAPE_DELAY_S", "3")),
+        scrape_timeout_s=get_int("SCRAPE_TIMEOUT_S", 20),
+        scrape_max_results=get_int("SCRAPE_MAX_RESULTS", 20),
+        gmaps_hl=get("GMAPS_HL", "en"),
+        gmaps_gl=get("GMAPS_GL", "id"),
         worker_interval_s=get_int("WORKER_INTERVAL_S", 30),
         scheduler_interval_s=get_int("SCHEDULER_INTERVAL_S", 60),
     )
