@@ -17,13 +17,21 @@ from .base import SourceAdapter
 def _iter_adapters() -> dict[str, type[SourceAdapter]]:
     # Local imports keep module import cheap and avoid cycles when an
     # adapter module grows heavier dependencies.
+    from .file_import import CsvImportAdapter, JsonImportAdapter, XlsxImportAdapter
     from .gmaps_scrape import GmapsScraperAdapter
     from .google_places import GooglePlacesAdapter
     from .serpapi import SerpApiAdapter
 
     return {
         cls.source_name: cls
-        for cls in (GmapsScraperAdapter, GooglePlacesAdapter, SerpApiAdapter)
+        for cls in (
+            GmapsScraperAdapter,
+            GooglePlacesAdapter,
+            SerpApiAdapter,
+            CsvImportAdapter,
+            JsonImportAdapter,
+            XlsxImportAdapter,
+        )
     }
 
 

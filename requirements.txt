@@ -8,6 +8,7 @@ PyYAML>=6.0
 SQLAlchemy>=2.0
 psycopg[binary]>=3.2
 py3dns
+openpyxl>=3.1
 
 # Services
 fastapi>=0.115
