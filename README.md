@@ -59,6 +59,27 @@ Atau via CLI (tanpa masuk Python):
 
 Catatan kepatuhan: `gmaps_scrape` memakai endpoint tidak resmi — risiko ToS Google; tidak ada bypass CAPTCHA/anti-bot, hanya GET dengan delay antar-halaman. Pindah ke `google_places` (satu env var) kalau butuh kepatuhan penuh/stabilitas.
 
+### Business discovery (PHASE 2)
+
+Pipeline otomatis berjalan di service worker + scheduler:
+
+1. `config/keywords.yaml` — daftar keyword × lokasi (+ override per source)
+2. Scheduler tiap `SCHEDULER_INTERVAL_S` (default 60s) men-enqueue job pencarian yang belum pernah dijalankan (idempoten; job gagal auto-retry tick berikutnya)
+3. Worker tiap `WORKER_INTERVAL_S` (default 30s) menjalankan job: search via adapter → simpan ke tabel `businesses` (dedup by place_id / nama+alamat; website dinormalisasi + domain diindeks)
+
+Contoh plan:
+
+```yaml
+queries: [kedai kopi, klinik gigi]
+locations: [Yogyakarta, Bandung]
+max_results: 20
+# sources:
+#   gmaps_scrape: false          # matikan source default
+#   serpapi: {queries: [laundry], locations: [Jakarta]}
+```
+
+Hasil live test: 2 keyword × 2 kota → 80 bisnis tersimpan di PostgreSQL, 64 dengan domain unik (antrian crawling website fase berikutnya). Email tidak berasal dari sumber Google — didapat dengan crawling website tiap bisnis (fase crawling + ekstraksi kontak).
+
 ## 3. Arsitektur
 
 ```
