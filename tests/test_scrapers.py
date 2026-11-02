@@ -13,6 +13,8 @@ import pytest
 
 from scrapers import Business, get_adapter, list_sources
 from scrapers.gmaps_scrape import _parse_payload, _parse_record
+from scrapers.google_places import GooglePlacesAdapter
+from scrapers.serpapi import SerpApiAdapter
 
 
 def make_record() -> list:
@@ -116,11 +118,11 @@ class TestRegistry:
 
 class TestKeylessAdapters:
     def test_places_without_key_reports_error(self):
-        result = get_adapter("google_places").search("klinik")
+        result = GooglePlacesAdapter(api_key="").search("klinik")
         assert result.businesses == []
         assert "GOOGLE_PLACES_API_KEY" in result.error
 
     def test_serpapi_without_key_reports_error(self):
-        result = get_adapter("serpapi").search("klinik")
+        result = SerpApiAdapter(api_key="").search("klinik")
         assert result.businesses == []
         assert "SERPAPI_KEY" in result.error
