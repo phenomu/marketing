@@ -26,13 +26,18 @@ Direncanakan (belum ada): business discovery loop (keyword → job → penyimpan
 
 ### Sumber data (implementasi awal)
 
-Tiga adapter siap pakai, dipilih via env `LEAD_SOURCE`:
+Tiga adapter Google + tiga importer file, dipilih via env `LEAD_SOURCE`:
 
 | Source | Mode | Kebutuhan | Status |
 |---|---|---|---|
 | `gmaps_scrape` (default) | free — hasil Google Maps via endpoint internal `tbm=map` (JSON) | tanpa key | terverifikasi live (nama, telepon, website, rating, kategori, alamat, koordinat) |
-| `google_places` | paid — Google Places API (New) resmi | `GOOGLE_PLACES_API_KEY` | implementasi selesai; live test menunggu key |
-| `serpapi` | paid — SerpAPI engine Google Maps | `SERPAPI_KEY` (free tier 250 pencarian/bln) | implementasi selesai; live test menunggu key |
+| `google_places` | paid — Google Places API (New) resmi | `GOOGLE_PLACES_API_KEY` | implementasi + mock test selesai; live test menunggu key |
+| `serpapi` | paid — SerpAPI engine Google Maps | `SERPAPI_KEY` (free tier 250 pencarian/bln) | implementasi + mock test selesai; live test menunggu key |
+| `csv_import` | file | `CSV_IMPORT_PATH` | terverifikasi (12 test) |
+| `json_import` | file | `JSON_IMPORT_PATH` | terverifikasi (list & wrapper) |
+| `xlsx_import` | file | `XLSX_IMPORT_PATH` | terverifikasi (openpyxl) |
+
+Importer membaca header EN/ID otomatis (name/nama, telepon/phone, situs/website, kategori, ulasan).
 
 ```python
 from scrapers import get_adapter
@@ -53,18 +58,19 @@ marketing/
 │   ├── scheduler.py        # background scheduler loop (scaffold)
 │   ├── db.py               # SQLAlchemy engine + schema
 │   └── heartbeat.py        # liveness file utk service non-HTTP
-├── scrapers/               # PHASE 1: source adapters
+├── scrapers/               # PHASE 1: source adapters + importers
 │   ├── base.py             # Business, SearchResult, SourceAdapter ABC
-│   ├── registry.py         # LEAD_SOURCE resolver
+│   ├── registry.py         # LEAD_SOURCE resolver (6 source)
 │   ├── gmaps_scrape.py     # free: Google Maps tbm=map JSON
 │   ├── google_places.py    # paid: Places API (New)
-│   └── serpapi.py          # paid: SerpAPI google_maps engine
+│   ├── serpapi.py          # paid: SerpAPI google_maps engine
+│   └── file_import.py      # CSV / JSON / XLSX importer
 ├── config/
 │   ├── settings.py         # env-only settings (single source of truth)
 │   └── logging_setup.py    # stdout + rotating file
 ├── dashboard/app.py        # Streamlit status page
 ├── scripts/                # sanity.py, init_db.py, heartbeat_check.py
-├── tests/                  # 25 unit test
+├── tests/                  # 46 unit test
 ├── conftest.py
 ├── Dockerfile              # SATU image utk api/worker/scheduler/dashboard
 ├── docker-compose.yml      # dev: db default, app via profile
