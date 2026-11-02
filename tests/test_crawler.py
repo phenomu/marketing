@@ -5,9 +5,12 @@ monkeypatched or injected; engines get in-memory SQLite)."""
 from __future__ import annotations
 
 import importlib
+import socket
 
 import pytest
 from sqlalchemy import create_engine
+
+from app.urls import is_public_host
 
 fetch_mod = importlib.import_module("app.crawler.fetch")
 robots_mod = importlib.import_module("app.crawler.robots")
@@ -33,6 +36,19 @@ def engine():
     eng = create_engine("sqlite://", future=True)
     METADATA.create_all(eng)
     return eng
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_hosts(monkeypatch):
+    """Fixture domains (.example / a.com) don't resolve — stub the SSRF
+    guard in store/robots so queue+robots tests stay offline. The fetch
+    guard itself is NOT stubbed: TestSsrfGuard exercises the real one
+    with IP literals (no DNS)."""
+    import app.crawler.robots as _r
+    import app.store as _s
+
+    monkeypatch.setattr(_r, "is_public_host", lambda h, **kw: True)
+    monkeypatch.setattr(_s, "is_public_host", lambda h, **kw: True)
 
 
 HOME_HTML = """
@@ -106,6 +122,68 @@ class TestIndustries:
         assert jobs == ["kopi.example"]
 
 
+class TestSsrfGuard:
+    def test_private_targets_blocked(self):
+        assert not is_public_host("169.254.169.254")
+        assert not is_public_host("127.0.0.1")
+        assert not is_public_host("10.1.2.3")
+        assert not is_public_host("localhost", _resolver=_fake_resolver("127.0.0.1"))
+        assert not is_public_host("http://u:p@169.254.169.254/")
+        assert not is_public_host("[::1]")
+        assert not is_public_host("")
+        assert not is_public_host("bad host!")
+
+    def test_public_targets_allowed(self):
+        assert is_public_host("8.8.8.8")
+        assert is_public_host("1.1.1.1")
+        assert is_public_host("example.com", _resolver=_fake_resolver("93.184.216.34"))
+        assert is_public_host("http://example.com/")
+        assert is_public_host("https://1.2.3.4:8080/path")
+
+    def test_fetch_blocks_private_ip(self, monkeypatch):
+        result = fetch_mod.fetch("http://169.254.169.254/latest/meta-data/", "bot",
+                                 retries=0, sleep=lambda s: None)
+        assert not result.ok
+        assert "SSRF guard" in result.error
+        # no network call must happen — assert by counting getter calls
+        class Boom:
+            def get(self, *a, **kw):
+                raise AssertionError("network must not be reached")
+        monkeypatch.setattr(fetch_mod, "requests", Boom())
+        result2 = fetch_mod.fetch("http://10.0.0.1/x", "bot", retries=0, sleep=lambda s: None)
+        assert "SSRF guard" in result2.error
+
+    def test_fetch_blocks_redirect_to_private(self, monkeypatch):
+        class Resp:
+            def __init__(self, status, location=""):
+                self.status_code = status
+                self.headers = {"Location": location} if location else {}
+            def iter_content(self, chunk_size=8192):
+                return iter([])
+            def close(self):
+                pass
+        calls = {"n": 0}
+        class NS:
+            RequestException = Exception
+            def get(self, url, **kw):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    return Resp(302, location="http://169.254.169.254/steal")
+                return Resp(200)
+        monkeypatch.setattr(fetch_mod, "requests", NS())
+        # redirect target is an IP literal — no DNS needed
+        result = fetch_mod.fetch("http://8.8.8.8/first", "bot", retries=0, sleep=lambda s: None)
+        assert not result.ok
+        assert "blocked redirect" in result.error
+        assert calls["n"] == 1  # stopped before requesting the private hop
+
+
+def _fake_resolver(ip: str):
+    def resolve(host, *a, **kw):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0))]
+    return resolve
+
+
 class TestRobots:
     def test_parse_allow_and_disallow(self, monkeypatch):
         robots_mod.clear_cache()
@@ -153,7 +231,7 @@ class TestFetch:
                 return Resp(500 if calls["n"] == 1 else 200)
         sleeps = []
         monkeypatch.setattr(fetch_mod, "requests", NS())
-        result = fetch_mod.fetch("https://a.com/", "bot", retries=2, delay=0.01, sleep=sleeps.append)
+        result = fetch_mod.fetch("https://8.8.8.8/", "bot", retries=2, delay=0.01, sleep=sleeps.append)
         assert result.ok and result.html == "<html>hi</html>"
         assert calls["n"] == 2 and len(sleeps) == 1  # backed off once
 
@@ -171,7 +249,7 @@ class TestFetch:
                 calls["n"] += 1
                 return Resp()
         monkeypatch.setattr(fetch_mod, "requests", NS())
-        result = fetch_mod.fetch("https://a.com/", "bot", retries=3, delay=0.01, sleep=lambda s: None)
+        result = fetch_mod.fetch("https://8.8.8.8/", "bot", retries=3, delay=0.01, sleep=lambda s: None)
         assert not result.ok and result.status == 403 and calls["n"] == 1
 
 
@@ -209,6 +287,15 @@ class FakeCrawlHTTP:
 
     def install(self, monkeypatch):
         robots_mod.clear_cache()
+        # hermetic: treat every host as public (SSRF guard off in tests)
+        # hermetic: SSRF guard off (hosts in fixtures don't resolve);
+        # robots still goes through the fake robots.txt served below
+        engine_mod = importlib.import_module("app.crawler.engine")
+        monkeypatch.setattr(fetch_mod, "_target_allowed", lambda url: True)
+        monkeypatch.setattr(
+            engine_mod, "allowed",
+            lambda url, ua, timeout_s=10: robots_mod.allowed(url, ua, timeout_s=timeout_s),
+        )
 
         robots_ns = type(
             "RobotsNS", (), {"get": lambda url, **kw: type("R", (), {

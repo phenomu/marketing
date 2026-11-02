@@ -1,6 +1,4 @@
-data/raw/
-data/leads.csv
-data/sent.log
+data/
 __pycache__/
 *.pyc
 .env
