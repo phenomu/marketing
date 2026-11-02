@@ -95,8 +95,15 @@ class TestBusiness:
 
 
 class TestRegistry:
-    def test_lists_three_sources(self):
-        assert set(list_sources()) == {"gmaps_scrape", "google_places", "serpapi"}
+    def test_lists_all_six_sources(self):
+        assert set(list_sources()) == {
+            "gmaps_scrape",
+            "google_places",
+            "serpapi",
+            "csv_import",
+            "json_import",
+            "xlsx_import",
+        }
 
     def test_default_source_from_env(self, monkeypatch):
         monkeypatch.setenv("LEAD_SOURCE", "serpapi")
