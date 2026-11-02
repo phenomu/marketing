@@ -1,8 +1,9 @@
 """Crawler worker — long-running process polling for crawl jobs.
 
-Status: SCAFFOLD. Loop, heartbeat, DB connectivity, and graceful shutdown are
-real; crawl job discovery/execution lands with PHASE 2-3 (see TRACKER.md —
-never present this as a completed feature).
+Loop, heartbeat, DB connectivity, and graceful shutdown are real. As of
+PHASE 2 the worker drains the discovery job queue (keywords.yaml ->
+scheduler enqueues -> worker runs source adapters -> businesses upserted).
+Website crawling jobs land with PHASE 3.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import logging
 import time
 
 from app.db import check_db
+from app.discovery import run_pending_jobs
 from app.heartbeat import write_heartbeat
 from config import settings
 from config.logging_setup import setup_logging
@@ -27,7 +29,17 @@ def run() -> None:
             write_heartbeat("worker", db=db_state)
             if db_state == "down":
                 log.warning("database unreachable; worker idles until it recovers")
-            # TODO(PHASE 2-3): poll the crawl job table and process pending jobs.
+            else:
+                try:
+                    stats = run_pending_jobs()
+                    if stats["jobs"]:
+                        log.info(
+                            "discovery batch: %s jobs, %s new, %s updated",
+                            stats["jobs"], stats["new"], stats["updated"],
+                        )
+                except Exception as exc:  # noqa: BLE001 — service loop must survive
+                    log.exception("discovery batch failed: %s", exc)
+            # TODO(PHASE 3): poll the crawl job table and process pending jobs.
             time.sleep(settings.worker_interval_s)
     except KeyboardInterrupt:
         log.info("worker stopped")

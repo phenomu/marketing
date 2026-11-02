@@ -1,7 +1,9 @@
 """Background scheduler — periodic task runner.
 
-Status: SCAFFOLD. The interval loop + heartbeat are real; scheduled jobs
-(follow-ups, retry passes) land with PHASE 6 (see TRACKER.md).
+Interval loop + heartbeat real. As of PHASE 2 the scheduler refreshes the
+discovery queue from `config/keywords.yaml` (idempotent: jobs are only
+queued for searches not already covered). Follow-up/retry scheduling
+lands with PHASE 6.
 """
 
 from __future__ import annotations
@@ -9,12 +11,21 @@ from __future__ import annotations
 import logging
 import time
 
-from app.db import check_db
+from app.db import check_db, get_engine
+from app.discovery import enqueue_from_plan, load_keyword_plan
 from app.heartbeat import write_heartbeat
 from config import settings
 from config.logging_setup import setup_logging
 
 log = logging.getLogger(__name__)
+
+
+def refresh_discovery_queue() -> int:
+    """Enqueue discovery jobs from keywords.yaml. Returns jobs queued."""
+    plan = load_keyword_plan()
+    if not plan:
+        return 0
+    return enqueue_from_plan(get_engine(), settings.lead_source, plan)
 
 
 def run() -> None:
@@ -28,6 +39,13 @@ def run() -> None:
         while True:
             db_state = "up" if check_db() else "down"
             write_heartbeat("scheduler", db=db_state)
+            if db_state == "up":
+                try:
+                    queued = refresh_discovery_queue()
+                    if queued:
+                        log.info("queued %s discovery job(s) from keywords.yaml", queued)
+                except Exception as exc:  # noqa: BLE001 — service loop must survive
+                    log.exception("scheduler discovery refresh failed: %s", exc)
             # TODO(PHASE 6): run follow-up scheduling + retry passes from the DB.
             time.sleep(settings.scheduler_interval_s)
     except KeyboardInterrupt:
