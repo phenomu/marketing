@@ -1,0 +1,26 @@
+# PHASE 2 — business discovery plan.
+# Scheduler membaca file ini dan meng-enqueue 1 discovery job per
+# (source x query x location). Edit lalu tunggu tick scheduler berikutnya
+# (SCHEDULER_INTERVAL_S, default 60s) — job baru hanya dibuat untuk
+# kombinasi yang belum pernah dijalankan (plan idempotent).
+#
+# Struktur:
+#   queries:    daftar keyword pencarian
+#   locations:  daftar lokasi (cross product dengan queries)
+#   max_results: hasil maks per job (default 20)
+#   sources:    override per source — false = matikan source default,
+#               {queries: [...]} = source tambahan dengan keyword sendiri
+
+queries:
+  - kedai kopi
+  - klinik gigi
+locations:
+  - Yogyakarta
+  - Bandung
+max_results: 20
+
+# Contoh: matikan source default dan aktifkan serpapi + csv_import:
+# sources:
+#   gmaps_scrape: false
+#   serpapi: {queries: [laundry], locations: [Jakarta], max_results: 10}
+#   csv_import: {}
