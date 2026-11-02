@@ -22,7 +22,26 @@ Sudah diimplementasikan (terverifikasi test nyata):
 - Logging ganda: stdout (container) + rotating file (host `logs/`)
 - Docker: satu image untuk semua service Python, compose profiles, healthcheck semua service, volume persisten
 
-Direncanakan (belum ada): business discovery, crawling website, ekstraksi email, validasi MX, lead management + scoring, campaign email, follow-up, reporting lengkap.
+Direncanakan (belum ada): business discovery loop (keyword → job → penyimpanan), crawling website, ekstraksi email, validasi MX, lead management + scoring, campaign email, follow-up, reporting lengkap.
+
+### Sumber data (implementasi awal)
+
+Tiga adapter siap pakai, dipilih via env `LEAD_SOURCE`:
+
+| Source | Mode | Kebutuhan | Status |
+|---|---|---|---|
+| `gmaps_scrape` (default) | free — hasil Google Maps via endpoint internal `tbm=map` (JSON) | tanpa key | terverifikasi live (nama, telepon, website, rating, kategori, alamat, koordinat) |
+| `google_places` | paid — Google Places API (New) resmi | `GOOGLE_PLACES_API_KEY` | implementasi selesai; live test menunggu key |
+| `serpapi` | paid — SerpAPI engine Google Maps | `SERPAPI_KEY` (free tier 250 pencarian/bln) | implementasi selesai; live test menunggu key |
+
+```python
+from scrapers import get_adapter
+result = get_adapter().search("kedai kopi", location="Yogyakarta", max_results=20)
+for b in result.businesses:
+    print(b.name, b.phone, b.website, b.rating)
+```
+
+Catatan kepatuhan: `gmaps_scrape` memakai endpoint tidak resmi — risiko ToS Google; tidak ada bypass CAPTCHA/anti-bot, hanya GET dengan delay antar-halaman. Pindah ke `google_places` (satu env var) kalau butuh kepatuhan penuh/stabilitas.
 
 ## 3. Arsitektur
 
@@ -34,12 +53,18 @@ marketing/
 │   ├── scheduler.py        # background scheduler loop (scaffold)
 │   ├── db.py               # SQLAlchemy engine + schema
 │   └── heartbeat.py        # liveness file utk service non-HTTP
+├── scrapers/               # PHASE 1: source adapters
+│   ├── base.py             # Business, SearchResult, SourceAdapter ABC
+│   ├── registry.py         # LEAD_SOURCE resolver
+│   ├── gmaps_scrape.py     # free: Google Maps tbm=map JSON
+│   ├── google_places.py    # paid: Places API (New)
+│   └── serpapi.py          # paid: SerpAPI google_maps engine
 ├── config/
 │   ├── settings.py         # env-only settings (single source of truth)
 │   └── logging_setup.py    # stdout + rotating file
 ├── dashboard/app.py        # Streamlit status page
 ├── scripts/                # sanity.py, init_db.py, heartbeat_check.py
-├── tests/                  # 12 unit test
+├── tests/                  # 25 unit test
 ├── conftest.py
 ├── Dockerfile              # SATU image utk api/worker/scheduler/dashboard
 ├── docker-compose.yml      # dev: db default, app via profile
