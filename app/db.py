@@ -14,6 +14,8 @@ from functools import lru_cache
 from sqlalchemy import (
     Column,
     DateTime,
+    Float,
+    Integer,
     MetaData,
     String,
     Table,
@@ -26,13 +28,54 @@ from config import settings
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
 
 METADATA = MetaData()
 
 
 def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.UTC).replace(tzinfo=None)
+
+
+BUSINESSES = Table(
+    "businesses",
+    METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("key", String(255), nullable=False, unique=True, index=True),  # dedup key
+    Column("name", String(255), nullable=False),
+    Column("address", String(512), default=""),
+    Column("phone", String(64), default=""),
+    Column("website", String(512), default=""),
+    Column("domain", String(255), default="", index=True),  # website dedup + crawl queue
+    Column("category", String(128), default=""),
+    Column("place_id", String(128), default=""),
+    Column("source", String(32), default=""),
+    Column("source_url", String(512), default=""),
+    Column("latitude", Float),
+    Column("longitude", Float),
+    Column("rating", Float),
+    Column("review_count", Integer),
+    Column("first_seen_at", DateTime, default=_utcnow),
+    Column("last_seen_at", DateTime, default=_utcnow, onupdate=_utcnow),
+)
+
+DISCOVERY_JOBS = Table(
+    "discovery_jobs",
+    METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("source", String(32), nullable=False),
+    Column("query", String(255), nullable=False),
+    Column("location", String(128), default=""),
+    Column("max_results", Integer, default=20),
+    Column("status", String(16), default="pending"),  # pending|running|done|failed
+    Column("found_count", Integer, default=0),
+    Column("new_count", Integer, default=0),
+    Column("updated_count", Integer, default=0),
+    Column("error", String(2000), default=""),
+    Column("created_at", DateTime, default=_utcnow),
+    Column("started_at", DateTime),
+    Column("finished_at", DateTime),
+)
 
 
 APP_META = Table(
