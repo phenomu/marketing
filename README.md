@@ -46,6 +46,17 @@ for b in result.businesses:
     print(b.name, b.phone, b.website, b.rating)
 ```
 
+Atau via CLI (tanpa masuk Python):
+
+```bash
+.venv/bin/python -m scrapers.run "kedai kopi" --location Yogyakarta --max 10
+.venv/bin/python -m scrapers.run "laundry" --source serpapi --location Bandung --max 10
+.venv/bin/python -m scrapers.run "x" --source csv_import --path data/leads_lama.csv
+.venv/bin/python -m scrapers.run "klinik" --source gmaps_scrape --location Jakarta --out data/leads.csv
+```
+
+`--out` menyimpan hasil ke CSV (kolom: nama, alamat, telepon, website, kategori, rating, jumlah review, place_id, koordinat). Exit code: 0 sukses, 1 error adapter (termasuk belum terkonfigurasi), 2 nama source salah.
+
 Catatan kepatuhan: `gmaps_scrape` memakai endpoint tidak resmi — risiko ToS Google; tidak ada bypass CAPTCHA/anti-bot, hanya GET dengan delay antar-halaman. Pindah ke `google_places` (satu env var) kalau butuh kepatuhan penuh/stabilitas.
 
 ## 3. Arsitektur
