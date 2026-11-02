@@ -59,6 +59,25 @@ Atau via CLI (tanpa masuk Python):
 
 Catatan kepatuhan: `gmaps_scrape` memakai endpoint tidak resmi — risiko ToS Google; tidak ada bypass CAPTCHA/anti-bot, hanya GET dengan delay antar-halaman. Pindah ke `google_places` (satu env var) kalau butuh kepatuhan penuh/stabilitas.
 
+### Website crawling (PHASE 3)
+
+Antrian crawl dibangun otomatis dari domain bisnis hasil discovery (profil platform seperti Facebook/WhatsApp/linktree dilewati — bukan situs bisnis yang bisa ditambang kontaknya). Tiap job: robots.txt dihormati (4xx/5xx/network gagal = allow + log), delay antar-request ke domain sama (`CRAWL_DELAY_S`, default 5s), max halaman per domain (`CRAWL_MAX_PAGES`, default 10), retry + backoff untuk network error/429/5xx, timeout + body cap 2MB. Halaman kontak/about diprioritaskan via kata kunci EN+ID (kontak/contact/hubungi/tentang/about...). Hasil tersimpan di `crawl_jobs` + `crawl_pages` (teks halaman disimpan utuh untuk ekstraksi email fase berikutnya; mailto yang ketemu langsung dihitung).
+
+Verifikasi live: blancocoffee.id 10 halaman (halaman `/contact` ditemukan + email ada di teks tersimpan), avadental.co.id 10 halaman, audydental.com ditolak robots.txt (sesuai aturan).
+
+Test manual:
+
+```bash
+.venv/bin/python -m app.crawl_cli --domain example.com   # crawl 1 domain
+.venv/bin/python -m app.crawl_cli --limit 3              # jalankan 3 job dari queue
+.venv/bin/python -m app.crawl_cli --list                 # status job
+.venv/bin/python -m app.crawl_cli --pages 4              # halaman hasil job #4
+```
+
+### Industry filtering (config-driven)
+
+`config/industries.yaml` — daftar keyword include/exclude (EN+ID). Bisnis yang match ditandai `industry_match=true` di DB (tidak ada data yang dibuang; filter dipakai saat export/lead management). Edit file kapan saja — scheduler membaca ulang tiap tick, tanpa restart.
+
 ### Business discovery (PHASE 2)
 
 Pipeline otomatis berjalan di service worker + scheduler:
