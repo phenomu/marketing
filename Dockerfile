@@ -16,6 +16,7 @@ COPY config/ ./config/
 COPY app/ ./app/
 COPY dashboard/ ./dashboard/
 COPY scripts/ ./scripts/
+COPY scrapers/ ./scrapers/
 
 # non-root runtime (uid/gid auto = 1000 in clean image = host user → bind mounts writable);
 # data/ logs/ are volume mount points, chowned so freshly created named volumes are writable
