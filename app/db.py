@@ -32,7 +32,7 @@ from config import settings
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "0.4"
+SCHEMA_VERSION = "0.5"
 
 METADATA = MetaData()
 
@@ -127,9 +127,30 @@ CONTACTS = Table(
     Column("source_url", String(512), default=""),
     Column("source_kind", String(16), default="text"),  # mailto|link|text
     Column("confidence", Integer, default=0),  # 0-100 heuristic
+    Column("status", String(16), default="unknown", nullable=False),  # PHASE 5: valid|invalid|unknown (emails)
+    Column("status_detail", String(512), default=""),  # why (e.g. "no MX record")
+    Column("checked_at", DateTime),  # last validation run (emails)
     Column("first_seen_at", DateTime, default=_utcnow),
     Column("last_seen_at", DateTime, default=_utcnow, onupdate=_utcnow),
     UniqueConstraint("business_id", "kind", "value_norm", name="uq_contacts_bkv"),
+)
+
+
+LEADS = Table(
+    "leads",
+    METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("business_id", Integer, ForeignKey("businesses.id"), nullable=False, unique=True, index=True),
+    Column("email_contact_id", Integer, ForeignKey("contacts.id")),
+    Column("phone_contact_id", Integer, ForeignKey("contacts.id")),
+    Column("best_email", Text, default=""),
+    Column("best_phone", Text, default=""),
+    Column("email_status", String(16), default="unknown"),  # status of best_email
+    Column("score", Integer, default=0),  # 0-100 PHASE 5 heuristic
+    Column("status", String(16), default="new", nullable=False),  # new|queued|contacted|suppressed (PHASE 6 uses)
+    Column("score_detail", String(512), default=""),  # score breakdown
+    Column("created_at", DateTime, default=_utcnow),
+    Column("updated_at", DateTime, default=_utcnow, onupdate=_utcnow),
 )
 
 
@@ -200,6 +221,12 @@ _MIGRATIONS: dict[str, tuple[str, ...]] = {
     "0.3": (
         "ALTER TABLE crawl_jobs ADD COLUMN contacts_extracted BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE crawl_pages ADD COLUMN mailtos TEXT",
+    ),
+    "0.4": (
+        "ALTER TABLE contacts ADD COLUMN status TEXT NOT NULL DEFAULT 'unknown'",
+        "ALTER TABLE contacts ADD COLUMN status_detail TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE contacts ADD COLUMN checked_at TIMESTAMP",
+        # leads table is created by create_all (new table — no ALTER needed)
     ),
 }
 
