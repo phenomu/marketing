@@ -58,7 +58,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.domain:
-        outcome = crawl_domain(args.domain.lstrip("https://").strip("/"))
+        domain = (
+            args.domain.strip()
+            .removeprefix("https://")
+            .removeprefix("http://")
+            .strip("/")
+        )
+        outcome = crawl_domain(domain)
         _print_outcome(outcome)
         return 0 if not outcome.error else 1
 

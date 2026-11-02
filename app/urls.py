@@ -84,3 +84,67 @@ def is_platform(domain: str) -> bool:
     rather than the business's own site."""
     d = (domain or "").lower().lstrip(".")
     return d in PLATFORM_DOMAINS or d.endswith(".wa.me") or d.endswith(".linktr.ee")
+
+
+# --- SSRF guard -------------------------------------------------------------
+# Crawl domains originate from EXTERNAL source data (business listings):
+# a hostile listing can plant an internal address as its "website". Every
+# outbound request must re-validate the target before connecting.
+
+import ipaddress
+import socket
+
+
+def _ip_is_private(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True for loopback/private/link-local/reserved ranges — never a valid
+    crawl target. Covers the cloud-metadata link-local 169.254.169.254."""
+    return (
+        ip.is_private       # covers 10/8, 172.16/12, 192.194/16, fc00::/7
+        or ip.is_loopback
+        or ip.is_link_local # covers 169.254.169.254 (cloud metadata)
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def is_public_host(host: str, _resolver=socket.getaddrinfo) -> bool:
+    """True when host resolves (or literally is) only to public IPs and uses
+    an http(s) scheme. Host strings may carry a scheme prefix (cleaned).
+    Never raises — unresolvable/invalid hosts are not public."""
+    if not host:
+        return False
+    candidate = host.strip().lower()
+    if "://" in candidate:
+        candidate = candidate.split("://", 1)[1]
+    candidate = candidate.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    # strip userinfo; keep bare host (port already dropped by extract_domain,
+    # CLI input may carry one)
+    candidate = candidate.rpartition("@")[2].split(":", 1)[0].rstrip("].")
+    if not candidate or "[" in candidate:
+        return False
+    try:
+        addr = ipaddress.ip_address(candidate)  # IP literal
+        return not _ip_is_private(addr)
+    except ValueError:
+        pass
+    if not candidate.replace(".", "").replace("-", "").isalnum():
+        return False  # hostname with odd characters — reject
+    try:
+        infos = _resolver(candidate, None, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, OSError, ValueError):
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        sockaddr = info[4]
+        ip_str = sockaddr[0]
+        if ip_str.startswith("::ffff:"):
+            ip_str = ip_str[7:].strip("[]")
+        try:
+            addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False
+        if _ip_is_private(addr):
+            return False
+    return True

@@ -14,6 +14,8 @@ from urllib.parse import urlsplit
 
 import requests
 
+from app.urls import is_public_host
+
 log = logging.getLogger(__name__)
 
 _ROBOTS_CACHE: dict[str, robotparser.RobotFileParser] = {}
@@ -33,6 +35,13 @@ def fetch_robots(
 
     parser = robotparser.RobotFileParser(_robots_url(scheme, domain))
     parser.parse([])  # default: empty rules = allow everything
+    if not is_public_host(domain):
+        # SSRF guard: hostile listing planted an internal address — never
+        # fetch robots from it; allow-all here, the fetch guard blocks the
+        # actual page requests.
+        log.warning("robots.txt %s: non-public host, skipping fetch", domain)
+        _ROBOTS_CACHE[domain] = parser
+        return parser
     try:
         response = requests.get(
             _robots_url(scheme, domain),

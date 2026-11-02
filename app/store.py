@@ -16,7 +16,7 @@ from sqlalchemy.engine import Engine
 
 from app.db import BUSINESSES, CONTACTS, CRAWL_JOBS, CRAWL_PAGES, DISCOVERY_JOBS
 from app.industries import matches_industry
-from app.urls import extract_domain, is_platform, normalize_website
+from app.urls import extract_domain, is_platform, is_public_host, normalize_website
 from scrapers.base import Business
 
 log = logging.getLogger(__name__)
@@ -247,6 +247,8 @@ def enqueue_crawl_domains(engine: Engine, limit: int = 200, industry_rules=None)
                 continue
             if is_platform(row.domain):
                 continue  # social profile, not a business site
+            if not is_public_host(row.domain):
+                continue  # SSRF guard: internal/invalid address in listing data
             if industry_rules is not None and industry_rules.enabled:
                 if not matches_industry(industry_rules, row.category, row.name):
                     continue
