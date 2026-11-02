@@ -88,6 +88,7 @@ class Settings:
     crawl_retries: int
     crawl_user_agent: str
     crawl_batch_limit: int
+    extract_batch_limit: int
 
     @property
     def is_production(self) -> bool:
@@ -148,6 +149,7 @@ def build_settings() -> Settings:
             "marketing-research-bot/0.1 (+contact discovery; respects robots.txt)",
         ),
         crawl_batch_limit=get_int("CRAWL_BATCH_LIMIT", 5),
+        extract_batch_limit=get_int("EXTRACT_BATCH_LIMIT", 10),
     )
 
 

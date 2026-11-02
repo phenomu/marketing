@@ -16,6 +16,7 @@ import time
 from app.db import check_db
 from app.discovery import run_pending_jobs
 from app.crawl import enqueue_crawls, run_pending_crawls
+from app.extract import run_pending_extractions
 from app.heartbeat import write_heartbeat
 from config import settings
 from config.logging_setup import setup_logging
@@ -57,9 +58,16 @@ def run() -> None:
                             "crawl batch: %s job(s), %s ok, %s pending left",
                             crawl_jobs, crawl_ok, batch["pending"],
                         )
+                    extract_stats = run_pending_extractions()
+                    if extract_stats["jobs"]:
+                        log.info(
+                            "extraction batch: %s job(s), %s new, %s updated",
+                            extract_stats["jobs"], extract_stats["new"],
+                            extract_stats["updated"],
+                        )
                 except Exception as exc:  # noqa: BLE001 — service loop must survive
                     log.exception("worker batch failed: %s", exc)
-            # (PHASE 4+: email extraction runs on stored page text)
+            # Next up: PHASE 5 validation + lead management on the contacts table.
             time.sleep(settings.worker_interval_s)
     except KeyboardInterrupt:
         log.info("worker stopped")

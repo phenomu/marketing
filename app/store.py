@@ -11,10 +11,10 @@ from __future__ import annotations
 import logging
 import datetime as dt
 
-from sqlalchemy import create_engine, delete, insert, select, update
+from sqlalchemy import create_engine, delete, func, insert, select, update
 from sqlalchemy.engine import Engine
 
-from app.db import BUSINESSES, CRAWL_JOBS, CRAWL_PAGES, DISCOVERY_JOBS
+from app.db import BUSINESSES, CONTACTS, CRAWL_JOBS, CRAWL_PAGES, DISCOVERY_JOBS
 from app.industries import matches_industry
 from app.urls import extract_domain, is_platform, normalize_website
 from scrapers.base import Business
@@ -283,6 +283,8 @@ def claim_next_crawl(engine: Engine) -> dict | None:
 def save_crawl_pages(engine: Engine, crawl_job_id: int, pages) -> int:
     """Insert CrawlOutcome.pages rows (replaces any previous rows for the
     job — re-crawls overwrite). Returns pages stored."""
+    import json
+
     with engine.begin() as conn:
         conn.execute(CRAWL_PAGES.delete().where(CRAWL_PAGES.c.crawl_job_id == crawl_job_id))
         for page in pages:
@@ -295,6 +297,7 @@ def save_crawl_pages(engine: Engine, crawl_job_id: int, pages) -> int:
                     fetched_ok=page.fetched_ok,
                     title=(page.title or "")[:500],
                     text=page.text,
+                    mailtos=json.dumps(page.mailtos or []),
                     fetched_at=_utcnow(),
                 )
             )
@@ -372,3 +375,143 @@ def tag_existing_businesses(engine: Engine, industry_rules) -> int:
             )
             tagged += 1
     return tagged
+
+
+# --- contacts layer (PHASE 4) -------------------------------------------------
+
+
+def claim_pending_extractions(engine: Engine, limit: int) -> list[dict]:
+    """Crawl jobs that finished crawling but were never extracted.
+    Marks nothing — extraction completion is set by mark_extraction_done."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(CRAWL_JOBS.c.id, CRAWL_JOBS.c.domain)
+            .where(CRAWL_JOBS.c.status == "done", CRAWL_JOBS.c.contacts_extracted == False)  # noqa: E712
+            .order_by(CRAWL_JOBS.c.id)
+            .limit(limit)
+        ).all()
+    return [{"id": int(r.id), "domain": r.domain} for r in rows]
+
+
+def load_crawl_pages(engine: Engine, crawl_job_id: int) -> list[dict]:
+    import json
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(
+                CRAWL_PAGES.c.url, CRAWL_PAGES.c.kind, CRAWL_PAGES.c.text,
+                CRAWL_PAGES.c.mailtos, CRAWL_PAGES.c.fetched_ok,
+            )
+            .where(CRAWL_PAGES.c.crawl_job_id == crawl_job_id, CRAWL_PAGES.c.fetched_ok == True)  # noqa: E712
+            .order_by(CRAWL_PAGES.c.id)
+        ).mappings()
+        out = []
+        for r in rows:
+            page = dict(r)
+            try:
+                page["mailtos"] = json.loads(page.pop("mailtos") or "[]")
+            except (TypeError, ValueError):
+                page["mailtos"] = []
+            out.append(page)
+        return out
+
+
+def primary_business_id(engine: Engine, domain: str) -> int | None:
+    """Business row matching a crawl domain: highest id (latest upsert)."""
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(BUSINESSES.c.id)
+            .where(BUSINESSES.c.domain == domain)
+            .order_by(BUSINESSES.c.id.desc())
+            .limit(1)
+        ).first()
+    return int(row.id) if row else None
+
+
+def save_contacts(engine: Engine, business_id: int, crawl_job_id: int, contacts) -> dict:
+    """Insert new contact rows; on (business, kind, value_norm) conflict bump
+    last_seen_at and keep the best confidence. Returns {new, updated}."""
+    new = updated = 0
+    with engine.begin() as conn:
+        existing = {
+            (r.kind, r.value_norm): (r.id, r.confidence)
+            for r in conn.execute(
+                select(CONTACTS.c.id, CONTACTS.c.kind, CONTACTS.c.value_norm, CONTACTS.c.confidence)
+                .where(CONTACTS.c.business_id == business_id)
+            ).all()
+        }
+        now = _utcnow()
+        for contact in contacts:
+            row_key = (contact.kind, contact.norm)
+            known = existing.get(row_key)
+            if known is None:
+                conn.execute(
+                    insert(CONTACTS).values(
+                        business_id=business_id,
+                        crawl_job_id=crawl_job_id,
+                        kind=contact.kind,
+                        value=contact.value[:2000],
+                        value_norm=contact.norm[:320],
+                        source_url=(contact.source_url or "")[:512],
+                        source_kind=contact.source_kind,
+                        confidence=contact.confidence,
+                        first_seen_at=now,
+                        last_seen_at=now,
+                    )
+                )
+                new += 1
+            else:
+                row_id, old_conf = known
+                conn.execute(
+                    update(CONTACTS)
+                    .where(CONTACTS.c.id == row_id)
+                    .values(
+                        crawl_job_id=crawl_job_id,
+                        last_seen_at=now,
+                        confidence=max(int(old_conf or 0), contact.confidence),
+                    )
+                )
+                updated += 1
+    return {"new": new, "updated": updated}
+
+
+def mark_extraction_done(engine: Engine, crawl_job_id: int) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            update(CRAWL_JOBS)
+            .where(CRAWL_JOBS.c.id == crawl_job_id)
+            .values(contacts_extracted=True)
+        )
+
+
+def update_business_address_if_empty(engine: Engine, business_id: int, address: str) -> int:
+    """Fill businesses.address only when empty — discovery data wins over
+    crawl guesses. Returns rows updated."""
+    with engine.begin() as conn:
+        result = conn.execute(
+            update(BUSINESSES)
+            .where(BUSINESSES.c.id == business_id, BUSINESSES.c.address == "")
+            .values(address=address[:512])
+        )
+        return result.rowcount
+
+
+def count_contacts(engine: Engine, business_id: int | None = None, kind: str | None = None) -> int:
+    stmt = select(func.count()).select_from(CONTACTS)
+    if business_id is not None:
+        stmt = stmt.where(CONTACTS.c.business_id == business_id)
+    if kind:
+        stmt = stmt.where(CONTACTS.c.kind == kind)
+    with engine.connect() as conn:
+        return int(conn.execute(stmt).scalar() or 0)
+
+
+def list_contacts(engine: Engine, business_id: int, limit: int = 50) -> list[dict]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(CONTACTS)
+            .where(CONTACTS.c.business_id == business_id)
+            .order_by(CONTACTS.c.kind, CONTACTS.c.confidence.desc())
+            .limit(limit)
+        ).mappings()
+        return [dict(r) for r in rows]
