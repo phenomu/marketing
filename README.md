@@ -221,6 +221,11 @@ Endpoint API: `/` (info), `/health` (liveness), `/ready` (readiness — 503 kala
 
 ## 9. Kepatuhan & Penggunaan yang Bertanggung Jawab
 
+- Crawler identitas jelas (User-Agent bot), robots.txt dihormati, delay antar-request, max halaman per domain, body cap.
+- SSRF guard: semua request crawler wajib resolve ke IP publik — alamat internal (cloud metadata, private network) ditolak sebelum connect, termasuk di tiap hop redirect.
+- DRY RUN default untuk semua pengiriman email; identitas pengirim jelas; unsubscribe dihormati (fase outreach).
+- Data dipakai hanya untuk keperluan riset lead yang sah; jangan bypass anti-bot/CAPTCHA; hormati ToS penyedia data.
+
 - Data source: patuhi ToS layanan dan robots.txt; jangan bypass CAPTCHA/anti-bot.
 - Email: identitas pengirim jelas, subjek tidak menyesatkan, wajib unsubscribe + suppression list; DRY_RUN default, kirim nyata hanya dengan otorisasi eksplisit.
 - Regulasi relevan: UU ITE, UU PDP (Indonesia); GDPR (target Eropa).
