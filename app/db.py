@@ -22,6 +22,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     create_engine,
     text,
 )
@@ -31,7 +32,7 @@ from config import settings
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "0.3"
+SCHEMA_VERSION = "0.4"
 
 METADATA = MetaData()
 
@@ -92,6 +93,7 @@ CRAWL_JOBS = Table(
     Column("contact_url", String(512), default=""),
     Column("about_url", String(512), default=""),
     Column("mailto_count", Integer, default=0),
+    Column("contacts_extracted", Boolean, default=False, nullable=False),  # PHASE 4
     Column("error", String(2000), default=""),
     Column("queued_at", DateTime, default=_utcnow),
     Column("started_at", DateTime),
@@ -109,7 +111,25 @@ CRAWL_PAGES = Table(
     Column("fetched_ok", Boolean, default=False),
     Column("title", String(512), default=""),
     Column("text", Text, default=""),  # visible text for PHASE 4 extraction
+    Column("mailtos", Text, default=""),  # JSON list — mailto: links per page (PHASE 4)
     Column("fetched_at", DateTime, default=_utcnow),
+)
+
+CONTACTS = Table(
+    "contacts",
+    METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("business_id", Integer, ForeignKey("businesses.id"), nullable=False, index=True),
+    Column("crawl_job_id", Integer, ForeignKey("crawl_jobs.id"), index=True),
+    Column("kind", String(16), nullable=False),  # email|phone|social|address
+    Column("value", Text, nullable=False),  # raw as found
+    Column("value_norm", String(320), nullable=False),  # normalized — dedup key part
+    Column("source_url", String(512), default=""),
+    Column("source_kind", String(16), default="text"),  # mailto|link|text
+    Column("confidence", Integer, default=0),  # 0-100 heuristic
+    Column("first_seen_at", DateTime, default=_utcnow),
+    Column("last_seen_at", DateTime, default=_utcnow, onupdate=_utcnow),
+    UniqueConstraint("business_id", "kind", "value_norm", name="uq_contacts_bkv"),
 )
 
 
@@ -176,6 +196,10 @@ def init_db() -> str:
 _MIGRATIONS: dict[str, tuple[str, ...]] = {
     "0.2": (
         "ALTER TABLE businesses ADD COLUMN industry_match BOOLEAN NOT NULL DEFAULT false",
+    ),
+    "0.3": (
+        "ALTER TABLE crawl_jobs ADD COLUMN contacts_extracted BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE crawl_pages ADD COLUMN mailtos TEXT",
     ),
 }
 
