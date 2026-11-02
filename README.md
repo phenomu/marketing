@@ -78,6 +78,18 @@ Test manual:
 
 `config/industries.yaml` — daftar keyword include/exclude (EN+ID). Bisnis yang match ditandai `industry_match=true` di DB (tidak ada data yang dibuang; filter dipakai saat export/lead management). Edit file kapan saja — scheduler membaca ulang tiap tick, tanpa restart.
 
+### Lead management & validation (PHASE 5)
+
+Email hasil ekstraksi divalidasi 3 lapis sebelum dipakai: syntax (regex + filter sampah), domain (DNS resolve, lewat SSRF guard), dan MX (lookup record + **connect ke mail server tanpa mengirim apa pun** — hanya EHLO/QUIT). Mail server yang menolak/di-timeout dianggap `unknown`, bukan `invalid` — jaringan lokal yang memblokir port 25 tidak akan menandai email valid sebagai mati.
+
+Dari kontak tervalidasi, sistem membangun **leads**: satu baris per bisnis berisi kontak terbaik + skor 0-100 (email valid 40/unknown 25, telepon 20, sosmed 5, alamat 10, website 15, kesegaran data 10/5 — rincian per lead tersimpan agar bisa diaudit). Export CSV siap pakai:
+
+```bash
+python -m app.export                       # semua leads → data/leads.csv
+python -m app.export --min-score 60        # hanya lead bagus
+python -m app.export --email-status valid  # hanya email tervalidasi
+```
+
 ### Contact extraction (PHASE 4)
 
 Setiap crawl selesai, worker otomatis menambang kontak dari teks halaman tersimpan: email (mailto + teks + bentuk obfuscated `nama (at) domain (dot) com`), nomor telepon Indonesia (08xx/+62 dinormalisasi ke +62…, termasuk link wa.me), profil sosmed (Instagram/Facebook/TikTok/LinkedIn/YouTube/X), dan alamat jalan (`Jl./Jalan/…`). Kontak disimpan di tabel `contacts` dengan dedup per bisnis, sumber URL, dan skor confidence (halaman kontak > about > home; mailto > link > teks).
