@@ -1,0 +1,22 @@
+# Industry filtering (PHASE 2 closure) — tag bisnis by kategori/nama.
+# File ini bisa diedit kapan saja; worker membaca ulang tiap job baru,
+# jadi menambah kategori D/E/F cukup tambah baris di include.
+#
+# match = (kategori ATAU nama mengandung salah satu kata di include)
+#         DAN TIDAK mengandung kata di exclude.
+# Bisnis yang tidak match TETAP disimpan (industry_match=false) —
+# filter dipakai saat export/lead management (PHASE 5), bukan saat simpan.
+
+include:
+  - kopi
+  - kafe
+  - cafe
+  - coffee
+  - klinik
+  - dental
+  - dentist
+  - gigi
+  - laundry
+  - laundry kilat
+  - cuci
+exclude: []
