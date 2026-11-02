@@ -40,11 +40,22 @@ def run() -> None:
                             "discovery batch: %s jobs, %s new, %s updated",
                             stats["jobs"], stats["new"], stats["updated"],
                         )
-                    crawl_stats = run_pending_crawls(limit=settings.crawl_batch_limit)
-                    if crawl_stats["jobs"]:
+                    # drain crawl jobs one domain at a time so the heartbeat
+                    # stays fresh while long crawls run (compose healthcheck
+                    # marks the worker unhealthy otherwise)
+                    crawl_jobs = crawl_ok = 0
+                    batch = {"jobs": 0, "ok": 0, "pending": 0}
+                    for _ in range(settings.crawl_batch_limit):
+                        write_heartbeat("worker", db=db_state)
+                        batch = run_pending_crawls(limit=1)
+                        crawl_jobs += batch["jobs"]
+                        crawl_ok += batch["ok"]
+                        if batch["jobs"] == 0:
+                            break
+                    if crawl_jobs:
                         log.info(
                             "crawl batch: %s job(s), %s ok, %s pending left",
-                            crawl_stats["jobs"], crawl_stats["ok"], crawl_stats["pending"],
+                            crawl_jobs, crawl_ok, batch["pending"],
                         )
                 except Exception as exc:  # noqa: BLE001 — service loop must survive
                     log.exception("worker batch failed: %s", exc)
