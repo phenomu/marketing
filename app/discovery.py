@@ -21,6 +21,7 @@ from sqlalchemy.engine import Engine
 
 from app import store
 from app.db import get_engine, init_db
+from app.industries import load_industry_rules
 from scrapers import get_adapter, list_sources
 
 log = logging.getLogger(__name__)
@@ -148,7 +149,9 @@ def _run_single_job(engine: Engine, job: dict) -> dict[str, int]:
         )
         return {"new": 0, "updated": 0}
 
-    new_count, updated_count = store.upsert_businesses(engine, result.businesses)
+    new_count, updated_count = store.upsert_businesses(
+        engine, result.businesses, industry_rules=load_industry_rules()
+    )
     status = store.JOB_DONE if not result.error else store.JOB_FAILED
     store.complete_job(
         engine,

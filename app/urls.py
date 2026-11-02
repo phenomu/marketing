@@ -66,3 +66,21 @@ def extract_domain(raw: str) -> str:
     if not normalized:
         return ""
     return urlsplit(normalized).hostname or ""
+
+
+# Big platforms that show up as business "websites" but are social/media
+# profiles, not a crawlable business site (no contact page to mine).
+PLATFORM_DOMAINS = {
+    "facebook.com", "instagram.com", "twitter.com", "x.com", "tiktok.com",
+    "youtube.com", "linkedin.com", "whatsapp.com", "api.whatsapp.com",
+    "wa.me", "tokopedia.com", "shopee.co.id", "gofood.com", "gojek.com",
+    "grab.com", "google.com", "maps.google.com", "goo.gl", "linktr.ee",
+    "bit.ly", "t.me", "telegram.me",
+}
+
+
+def is_platform(domain: str) -> bool:
+    """True when the domain is a social/marketplace platform profile
+    rather than the business's own site."""
+    d = (domain or "").lower().lstrip(".")
+    return d in PLATFORM_DOMAINS or d.endswith(".wa.me") or d.endswith(".linktr.ee")

@@ -11,11 +11,12 @@ from __future__ import annotations
 import logging
 import datetime as dt
 
-from sqlalchemy import create_engine, insert, select, update
+from sqlalchemy import create_engine, delete, insert, select, update
 from sqlalchemy.engine import Engine
 
-from app.db import BUSINESSES, DISCOVERY_JOBS
-from app.urls import extract_domain, normalize_website
+from app.db import BUSINESSES, CRAWL_JOBS, CRAWL_PAGES, DISCOVERY_JOBS
+from app.industries import matches_industry
+from app.urls import extract_domain, is_platform, normalize_website
 from scrapers.base import Business
 
 log = logging.getLogger(__name__)
@@ -144,11 +145,14 @@ def list_jobs(engine: Engine, limit: int = 20) -> list[dict]:
 # --- businesses --------------------------------------------------------------
 
 
-def upsert_businesses(engine: Engine, businesses: list[Business]) -> tuple[int, int]:
+def upsert_businesses(
+    engine: Engine, businesses: list[Business], industry_rules=None
+) -> tuple[int, int]:
     """Insert new businesses / refresh existing ones by dedup key.
 
     Non-empty incoming fields overwrite stored values (fresher source
-    data wins); empty fields never erase existing data. Returns
+    data wins); empty fields never erase existing data. industry_rules
+    (app.industries.IndustryRules, optional) tags industry_match. Returns
     (new_count, updated_count).
     """
     new_count = updated_count = 0
@@ -157,6 +161,11 @@ def upsert_businesses(engine: Engine, businesses: list[Business]) -> tuple[int, 
         key = biz.key
         if not key or not biz.name.strip():
             continue
+        industry_match = False
+        if industry_rules is not None:
+            industry_match = matches_industry(
+                industry_rules, biz.category or "", biz.name or ""
+            )
         with engine.begin() as conn:
             existing = conn.execute(
                 select(BUSINESSES.c.id).where(BUSINESSES.c.key == key)
@@ -176,6 +185,7 @@ def upsert_businesses(engine: Engine, businesses: list[Business]) -> tuple[int, 
                 "longitude": biz.longitude,
                 "rating": biz.rating,
                 "review_count": biz.review_count,
+                "industry_match": industry_match,
             }
             if existing is None:
                 conn.execute(
@@ -208,3 +218,157 @@ def list_businesses(engine: Engine, limit: int = 50, has_website: bool | None = 
         stmt = stmt.where(BUSINESSES.c.domain != "")
     with engine.connect() as conn:
         return [dict(r) for r in conn.execute(stmt).mappings()]
+
+
+# --- crawl (PHASE 3) ---------------------------------------------------------
+
+
+def enqueue_crawl_domains(engine: Engine, limit: int = 200, industry_rules=None) -> int:
+    """Queue crawl jobs for business domains not yet queued. When
+    industry_rules are provided (app.industries.IndustryRules), a domain
+    is queued only if at least one business on it matches the include
+    rules — an empty/disabled include list queues everything. Returns
+    newly queued rows."""
+    from sqlalchemy import func
+
+    with engine.begin() as conn:
+        existing = {row[0] for row in conn.execute(select(CRAWL_JOBS.c.domain))}
+        domain_rows = conn.execute(
+            select(BUSINESSES.c.domain, BUSINESSES.c.category, BUSINESSES.c.name)
+            .where(BUSINESSES.c.domain != "")
+            .order_by(BUSINESSES.c.id)
+            .limit(limit * 3)
+        ).all()
+        picked: set[str] = set()
+        for row in domain_rows:
+            if len(picked) >= limit:
+                break
+            if row.domain in existing or row.domain in picked:
+                continue
+            if is_platform(row.domain):
+                continue  # social profile, not a business site
+            if industry_rules is not None and industry_rules.enabled:
+                if not matches_industry(industry_rules, row.category, row.name):
+                    continue
+            picked.add(row.domain)
+        queued = 0
+        now = _utcnow()
+        for domain in sorted(picked):
+            conn.execute(
+                insert(CRAWL_JOBS).values(domain=domain, status="pending", queued_at=now)
+            )
+            queued += 1
+    return queued
+
+
+def claim_next_crawl(engine: Engine) -> dict | None:
+    """Mark the oldest pending crawl job running and return it."""
+    with engine.begin() as conn:
+        row = conn.execute(
+            select(CRAWL_JOBS.c.id, CRAWL_JOBS.c.domain)
+            .where(CRAWL_JOBS.c.status == "pending")
+            .order_by(CRAWL_JOBS.c.id)
+            .limit(1)
+        ).first()
+        if row is None:
+            return None
+        conn.execute(
+            update(CRAWL_JOBS)
+            .where(CRAWL_JOBS.c.id == row.id)
+            .values(status="running", started_at=_utcnow())
+        )
+    return {"id": int(row.id), "domain": row.domain}
+
+
+def save_crawl_pages(engine: Engine, crawl_job_id: int, pages) -> int:
+    """Insert CrawlOutcome.pages rows (replaces any previous rows for the
+    job — re-crawls overwrite). Returns pages stored."""
+    with engine.begin() as conn:
+        conn.execute(CRAWL_PAGES.delete().where(CRAWL_PAGES.c.crawl_job_id == crawl_job_id))
+        for page in pages:
+            conn.execute(
+                insert(CRAWL_PAGES).values(
+                    crawl_job_id=crawl_job_id,
+                    url=page.url,
+                    kind=page.kind,
+                    http_status=page.http_status,
+                    fetched_ok=page.fetched_ok,
+                    title=(page.title or "")[:500],
+                    text=page.text,
+                    fetched_at=_utcnow(),
+                )
+            )
+    return len(pages)
+
+
+def complete_crawl_job(
+    engine: Engine,
+    crawl_job_id: int,
+    status: str,
+    pages_crawled: int = 0,
+    outcome=None,
+    error: str = "",
+) -> None:
+    """Finish a crawl job: counters + contact/about URLs + mailto total."""
+    contact_url = about_url = ""
+    mailto_count = 0
+    if outcome is not None:
+        contact_pages = [p for p in outcome.pages if p.kind == "contact" and p.fetched_ok]
+        about_pages = [p for p in outcome.pages if p.kind == "about" and p.fetched_ok]
+        contact_url = contact_pages[0].url if contact_pages else ""
+        about_url = about_pages[0].url if about_pages else ""
+        mailto_count = sum(len(p.mailtos) for p in outcome.pages)
+    with engine.begin() as conn:
+        conn.execute(
+            update(CRAWL_JOBS)
+            .where(CRAWL_JOBS.c.id == crawl_job_id)
+            .values(
+                status=status,
+                pages_crawled=pages_crawled,
+                contact_url=contact_url[:512],
+                about_url=about_url[:512],
+                mailto_count=mailto_count,
+                error=error[:2000],
+                finished_at=_utcnow(),
+            )
+        )
+    log.info(
+        "crawl job %s -> %s (pages=%s mailto=%s%s)",
+        crawl_job_id, status, pages_crawled, mailto_count,
+        f" error={error}" if error else "",
+    )
+
+
+def count_crawl_jobs(engine: Engine, status: str | None = None) -> int:
+    from sqlalchemy import func
+
+    stmt = select(func.count()).select_from(CRAWL_JOBS)
+    if status:
+        stmt = stmt.where(CRAWL_JOBS.c.status == status)
+    with engine.connect() as conn:
+        return int(conn.execute(stmt).scalar() or 0)
+
+
+def list_crawl_jobs(engine: Engine, limit: int = 20) -> list[dict]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(CRAWL_JOBS).order_by(CRAWL_JOBS.c.id.desc()).limit(limit)
+        ).mappings()
+        return [dict(r) for r in rows]
+
+
+def tag_existing_businesses(engine: Engine, industry_rules) -> int:
+    """Backfill industry_match for rows stored before the rules existed.
+    Returns rows updated."""
+    tagged = 0
+    with engine.begin() as conn:
+        rows = conn.execute(select(BUSINESSES.c.id, BUSINESSES.c.category, BUSINESSES.c.name)).all()
+        for row in rows:
+            match = matches_industry(industry_rules, row.category, row.name)
+            conn.execute(
+                update(BUSINESSES)
+                .where(BUSINESSES.c.id == row.id)
+                .values(industry_match=match)
+            )
+            tagged += 1
+    return tagged
