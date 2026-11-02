@@ -78,6 +78,14 @@ Test manual:
 
 `config/industries.yaml` — daftar keyword include/exclude (EN+ID). Bisnis yang match ditandai `industry_match=true` di DB (tidak ada data yang dibuang; filter dipakai saat export/lead management). Edit file kapan saja — scheduler membaca ulang tiap tick, tanpa restart.
 
+### Contact extraction (PHASE 4)
+
+Setiap crawl selesai, worker otomatis menambang kontak dari teks halaman tersimpan: email (mailto + teks + bentuk obfuscated `nama (at) domain (dot) com`), nomor telepon Indonesia (08xx/+62 dinormalisasi ke +62…, termasuk link wa.me), profil sosmed (Instagram/Facebook/TikTok/LinkedIn/YouTube/X), dan alamat jalan (`Jl./Jalan/…`). Kontak disimpan di tabel `contacts` dengan dedup per bisnis, sumber URL, dan skor confidence (halaman kontak > about > home; mailto > link > teks).
+
+Hasil live (10 domain Yogyakarta/Bandung): 87 kontak — 7 email, 24 telepon, 56 alamat; contoh email confidence 80: `inquiry@blancocoffee.id`, `hello@klinikperigigi.com`.
+
+Validasi deliverability email (syntax/domain/MX) dan lead scoring = fase berikutnya.
+
 ### Business discovery (PHASE 2)
 
 Pipeline otomatis berjalan di service worker + scheduler:
