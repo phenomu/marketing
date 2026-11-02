@@ -13,10 +13,12 @@ from __future__ import annotations
 import logging
 import time
 
-from app.db import check_db
+from app.db import check_db, get_engine
 from app.discovery import run_pending_jobs
 from app.crawl import enqueue_crawls, run_pending_crawls
 from app.extract import run_pending_extractions
+from app.leads import build_leads
+from app.validation import run_validation_batch
 from app.heartbeat import write_heartbeat
 from config import settings
 from config.logging_setup import setup_logging

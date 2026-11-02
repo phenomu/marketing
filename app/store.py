@@ -14,7 +14,7 @@ import datetime as dt
 from sqlalchemy import create_engine, delete, func, insert, select, update
 from sqlalchemy.engine import Engine
 
-from app.db import BUSINESSES, CONTACTS, CRAWL_JOBS, CRAWL_PAGES, DISCOVERY_JOBS
+from app.db import BUSINESSES, CONTACTS, CRAWL_JOBS, CRAWL_PAGES, DISCOVERY_JOBS, LEADS
 from app.industries import matches_industry
 from app.urls import extract_domain, is_platform, is_public_host, normalize_website
 from scrapers.base import Business
@@ -517,3 +517,160 @@ def list_contacts(engine: Engine, business_id: int, limit: int = 50) -> list[dic
             .limit(limit)
         ).mappings()
         return [dict(r) for r in rows]
+
+
+# --- PHASE 5: validation + leads -------------------------------------------
+
+
+def pending_email_contacts(engine: Engine, limit: int = 20) -> list[dict]:
+    """Email contacts not validated yet (checked_at IS NULL), best-first."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(CONTACTS.c.id, CONTACTS.c.business_id, CONTACTS.c.value_norm)
+            .where(
+                CONTACTS.c.kind == "email",
+                CONTACTS.c.checked_at.is_(None),
+            )
+            .order_by(CONTACTS.c.confidence.desc(), CONTACTS.c.id)
+            .limit(limit)
+        ).mappings()
+        return [dict(r) for r in rows]
+
+
+def set_contact_validation(
+    engine: Engine, contact_id: int, status: str, detail: str = ""
+) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            update(CONTACTS)
+            .where(CONTACTS.c.id == contact_id)
+            .values(
+                status=status,
+                status_detail=detail[:512],
+                checked_at=_utcnow(),
+            )
+        )
+
+
+def business_contact_summary(engine: Engine) -> list[dict]:
+    """Per business: best email (status rank, then confidence), best phone,
+    and flags for social/address. Input for lead scoring."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(
+                CONTACTS.c.business_id,
+                CONTACTS.c.kind,
+                CONTACTS.c.id,
+                CONTACTS.c.value_norm,
+                CONTACTS.c.confidence,
+                CONTACTS.c.status,
+            )
+            .where(CONTACTS.c.kind.in_(("email", "phone", "social", "address")))
+            .order_by(CONTACTS.c.business_id)
+        ).mappings()
+        contacts = [dict(r) for r in rows]
+
+    by_business: dict[int, dict] = {}
+    for row in contacts:
+        summary = by_business.setdefault(row["business_id"], {})
+        kind = row["kind"]
+        if kind in ("email", "phone"):
+            rank = {"valid": 3, "unknown": 2}.get(row["status"] or "unknown", 1) if kind == "email" else 0
+            key = (kind, "rank")
+            current = summary.get(kind)
+            better = current is None or (
+                (rank, row["confidence"] or 0) > (current[2], current[1] or 0)
+            )
+            if better:
+                summary[kind] = (row["id"], row["confidence"] or 0, rank, row["value_norm"], row["status"])
+        else:
+            summary[kind] = True  # has social / address
+    return [
+        {"business_id": bid, **fields} for bid, fields in by_business.items()
+    ]
+
+
+def upsert_leads(engine: Engine, leads: list[dict]) -> dict:
+    """Insert new lead rows; update existing (by business_id). Returns
+    {new, updated}."""
+    new = updated = 0
+    with engine.begin() as conn:
+        existing = {
+            r.business_id: r.id
+            for r in conn.execute(select(LEADS.c.id, LEADS.c.business_id)).all()
+        }
+        now = _utcnow()
+        for lead in leads:
+            bid = lead["business_id"]
+            if bid in existing:
+                conn.execute(
+                    update(LEADS)
+                    .where(LEADS.c.id == existing[bid])
+                    .values(
+                        email_contact_id=lead.get("email_contact_id"),
+                        phone_contact_id=lead.get("phone_contact_id"),
+                        best_email=lead.get("best_email", ""),
+                        best_phone=lead.get("best_phone", ""),
+                        email_status=lead.get("email_status", "unknown"),
+                        score=lead.get("score", 0),
+                        score_detail=lead.get("score_detail", "")[:512],
+                        updated_at=now,
+                    )
+                )
+                updated += 1
+            else:
+                conn.execute(
+                    insert(LEADS).values(
+                        business_id=bid,
+                        email_contact_id=lead.get("email_contact_id"),
+                        phone_contact_id=lead.get("phone_contact_id"),
+                        best_email=lead.get("best_email", ""),
+                        best_phone=lead.get("best_phone", ""),
+                        email_status=lead.get("email_status", "unknown"),
+                        score=lead.get("score", 0),
+                        score_detail=lead.get("score_detail", "")[:512],
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                new += 1
+    return {"new": new, "updated": updated}
+
+
+def list_leads(
+    engine: Engine,
+    limit: int = 200,
+    min_score: int = 0,
+    email_status: str | None = None,
+) -> list[dict]:
+    stmt = (
+        select(
+            LEADS.c.business_id,
+            LEADS.c.best_email,
+            LEADS.c.email_status,
+            LEADS.c.best_phone,
+            LEADS.c.score,
+            LEADS.c.status,
+            LEADS.c.score_detail,
+            LEADS.c.updated_at,
+            BUSINESSES.c.name,
+            BUSINESSES.c.domain,
+            BUSINESSES.c.category,
+            BUSINESSES.c.address,
+        )
+        .select_from(LEADS)
+        .join(BUSINESSES, BUSINESSES.c.id == LEADS.c.business_id)
+        .order_by(LEADS.c.score.desc())
+        .limit(limit)
+    )
+    if min_score:
+        stmt = stmt.where(LEADS.c.score >= min_score)
+    if email_status:
+        stmt = stmt.where(LEADS.c.email_status == email_status)
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(stmt).mappings()]
+
+
+def count_leads(engine: Engine) -> int:
+    with engine.connect() as conn:
+        return int(conn.execute(select(func.count()).select_from(LEADS)).scalar() or 0)

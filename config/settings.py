@@ -89,6 +89,7 @@ class Settings:
     crawl_user_agent: str
     crawl_batch_limit: int
     extract_batch_limit: int
+    validate_batch_limit: int
 
     @property
     def is_production(self) -> bool:
@@ -150,6 +151,7 @@ def build_settings() -> Settings:
         ),
         crawl_batch_limit=get_int("CRAWL_BATCH_LIMIT", 5),
         extract_batch_limit=get_int("EXTRACT_BATCH_LIMIT", 10),
+        validate_batch_limit=get_int("VALIDATE_BATCH_LIMIT", 5),
     )
 
 
