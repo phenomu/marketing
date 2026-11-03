@@ -9,10 +9,14 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+import logging
+
 import app
 from app.db import check_db, get_engine
 from config import settings
 from config.logging_setup import setup_logging
+
+log = logging.getLogger(__name__)
 
 setup_logging("backend")
 
@@ -70,7 +74,13 @@ def unsubscribe_get(token: str):
     needed — one click, done; RFC 8058-style single-request opt-down)."""
     from app.outreach.bounce import process_unsubscribe_token
 
-    email = process_unsubscribe_token(get_engine(), token)
+    try:
+        email = process_unsubscribe_token(get_engine(), token)
+    except Exception:  # noqa: BLE001 — DB down must not 500-crash the loop
+        log.exception("unsubscribe GET failed")
+        return JSONResponse(
+            status_code=503, content={"status": "temporarily unavailable"}
+        )
     if email is None:
         return JSONResponse(
             status_code=404, content={"status": "invalid or expired token"}
@@ -85,7 +95,13 @@ def unsubscribe_post(token: str):
     """RFC 8058 one-click POST variant for mail clients that support it."""
     from app.outreach.bounce import process_unsubscribe_token
 
-    email = process_unsubscribe_token(get_engine(), token)
+    try:
+        email = process_unsubscribe_token(get_engine(), token)
+    except Exception:  # noqa: BLE001 — DB down must not 500-crash the loop
+        log.exception("unsubscribe POST failed")
+        return JSONResponse(
+            status_code=503, content={"status": "temporarily unavailable"}
+        )
     if email is None:
         return JSONResponse(status_code=404, content={"status": "invalid token"})
     return JSONResponse(

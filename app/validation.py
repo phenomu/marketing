@@ -259,7 +259,21 @@ def run_validation_batch(engine=None, limit: int = 5) -> dict:
         log.warning("validation claim failed: %s", exc)
         return stats
     for row in pending:
-        status = validate_email(row["value_norm"])
+        try:
+            status = validate_email(row["value_norm"])
+        except Exception as exc:  # noqa: BLE001 — one bad row must not kill the batch
+            log.warning(
+                "validate %s crashed (%s); marking unknown", row["value_norm"], exc
+            )
+            stats["emails"] += 1
+            stats["unknown"] += 1
+            try:
+                set_contact_validation(
+                    engine, row["id"], "unknown", f"validator error: {type(exc).__name__}"
+                )
+            except Exception:  # noqa: BLE001
+                log.warning("persist validation fallback failed: %s", row["value_norm"])
+            continue
         stats["emails"] += 1
         stats[status.status] = stats.get(status.status, 0) + 1
         try:
