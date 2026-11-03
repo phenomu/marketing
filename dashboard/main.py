@@ -67,6 +67,17 @@ PAGES = [
     "Export",
 ]
 
+PAGE_ICONS = {
+    "Overview": "◈",
+    "Lead Discovery": "⌖",
+    "Lead Management": "☰",
+    "Lead Detail": "◉",
+    "Campaigns": "✉",
+    "Email Preview": "◫",
+    "Analytics": "▲",
+    "Export": "⇩",
+}
+
 
 def _engine():
     """Lazy import so tests can monkeypatch app.db.get_engine."""
@@ -125,35 +136,39 @@ def _topbar(page: str) -> None:
 
 
 def _page_header(title: str, subtitle: str) -> None:
-    st.title(title)
     st.markdown(theme.page_header(title, subtitle), unsafe_allow_html=True)
 
 
 # --- sidebar ----------------------------------------------------------------
 
-st.markdown(
-    """
+with st.sidebar:
+    st.markdown(
+        """
 <div class="nc-logo">
   <span class="mark">◉</span>
   <span>MARKETING<small>NEON COMMAND</small></span>
 </div>
 """,
-    unsafe_allow_html=True,
-)
-page = st.sidebar.radio("Navigasi", PAGES, label_visibility="collapsed")
-if not settings.dry_run:
-    st.sidebar.error("DRY RUN OFF — live mode aktif. Cek OUTREACH_SEND_LIVE.")
-
-# live sidebar status — real settings, nothing fabricated
-st.markdown(
-    theme.side_status([
-        ("env", settings.app_env),
-        ("dry_run", str(settings.dry_run)),
-        ("send_live", str(settings.outreach_send_live)),
-        ("bind", "127.0.0.1"),
-    ]),
-    unsafe_allow_html=True,
-)
+        unsafe_allow_html=True,
+    )
+    page = st.radio(
+        "Navigasi",
+        PAGES,
+        format_func=lambda p: f"{PAGE_ICONS[p]}   {p}",
+        label_visibility="collapsed",
+    )
+    if not settings.dry_run:
+        st.error("DRY RUN OFF — live mode aktif. Cek OUTREACH_SEND_LIVE.")
+    # live sidebar status — real settings, nothing fabricated
+    st.markdown(
+        theme.side_status([
+            ("env", settings.app_env),
+            ("dry_run", str(settings.dry_run)),
+            ("send_live", str(settings.outreach_send_live)),
+            ("bind", "127.0.0.1"),
+        ]),
+        unsafe_allow_html=True,
+    )
 
 _topbar(page)
 
@@ -196,35 +211,44 @@ if page == "Overview":
     # activity (65%) + distribution (35%)
     a_col, d_col = st.columns([13, 7])
     with a_col:
-        _panel("Aktivitas outreach", "events per hari · 14 hari")
         daily = [r for r in queries.events_daily(_engine()) if "error" not in r]
-        _chart(charts.activity_chart_component(daily, height=280), 300)
+        _chart(
+            charts.activity_chart_component(
+                daily, height=280, title="Aktivitas outreach", hint="events / hari · 14 hari"
+            ),
+            324,
+        )
     with d_col:
-        _panel("Distribusi kontak", "per jenis")
         kinds = [r for r in queries.contacts_by_kind(_engine()) if "error" not in r]
         _chart(
             charts.donut_chart_component(
-                [(k["kind"], k["n"]) for k in kinds], center_label="kontak", height=255
+                [(k["kind"], k["n"]) for k in kinds], center_label="kontak",
+                height=250, title="Distribusi kontak", hint="per jenis",
             ),
-            272,
+            294,
         )
 
     # pipeline + health + system
     p_col, h_col, s_col = st.columns([2, 1, 1])
     with p_col:
-        _panel("Pipeline crawl", "job per status")
         crawl_items = sorted(data["crawl_by_status"].items())
         _chart(
             charts.bar_chart_component(
-                [k for k, _ in crawl_items], [v for _, v in crawl_items], height=195
+                [k for k, _ in crawl_items], [v for _, v in crawl_items],
+                height=185, title="Pipeline crawl", hint="job per status",
             ),
-            215,
+            229,
         )
     with h_col:
         done = data["crawl_by_status"].get("done", 0)
         total_crawl = sum(data["crawl_by_status"].values()) or 1
-        _panel("Kesehatan crawl", "done / total")
-        _chart(charts.gauge_chart_component(done, "done", max_value=total_crawl, height=148), 168)
+        _chart(
+            charts.gauge_chart_component(
+                done, "done", max_value=total_crawl, height=140,
+                title="Kesehatan crawl", hint="done / total",
+            ),
+            184,
+        )
     with s_col:
         _panel("System", "status nyata")
         rows_html = "".join(
@@ -242,15 +266,14 @@ if page == "Overview":
             unsafe_allow_html=True,
         )
 
-    _panel("Outreach events", "per tipe")
     ev_items = sorted(data["events_by_type"].items())
     if ev_items:
         _chart(
             charts.bar_chart_component(
                 [k for k, _ in ev_items], [v for _, v in ev_items],
-                height=150, horizontal=True,
+                height=150, horizontal=True, title="Outreach events", hint="per tipe",
             ),
-            40 + 34 * len(ev_items),
+            40 + 34 * len(ev_items) + 44,
         )
     st.caption(
         f"Event terakhir: {data['last_event_at'] or '—'} · "
@@ -619,14 +642,10 @@ elif page == "Email Preview":
             _panel("HTML", "body html")
             st.code(html or "—", language="html")
 
-        _panel("Pratinjau HTML (rendered)", "mail client simulation")
         if html:
-            st.markdown('<div class="nc-mail-frame">', unsafe_allow_html=True)
-            st.components.v1.html(  # type: ignore[attr-defined]
-                html, height=340, scrolling=True
-            )
-            st.markdown("</div>", unsafe_allow_html=True)
+            _chart(charts.mail_preview_component(html, height=320), 364)
         else:
+            _panel("Pratinjau HTML (rendered)", "mail client simulation")
             st.caption("Body HTML kosong — kirim text-only.")
 
         st.caption(f"Unsubscribe: {unsub}")
@@ -645,28 +664,37 @@ elif page == "Analytics":
         "semua dari data nyata.",
     )
 
-    _panel("Distribusi skor lead", "bucket 20 poin")
     buckets = [r for r in queries.leads_by_score_bucket(_engine()) if "error" not in r]
     if buckets:
         _chart(
             charts.bar_chart_component(
                 [f"{int(r['bucket'])}-{int(r['bucket']) + 19}" for r in buckets],
-                [int(r["n"]) for r in buckets], height=215,
+                [int(r["n"]) for r in buckets], height=205,
+                title="Distribusi skor lead", hint="bucket 20 poin",
             ),
-            235,
+            249,
         )
 
     a1, a2 = st.columns(2)
     with a1:
-        _panel("Kontak per jenis", "distribusi")
         kinds = [r for r in queries.contacts_by_kind(_engine()) if "error" not in r]
         if kinds:
-            _chart(charts.donut_chart_component([(k["kind"], k["n"]) for k in kinds]), 290)
+            _chart(
+                charts.donut_chart_component(
+                    [(k["kind"], k["n"]) for k in kinds],
+                    height=245, title="Kontak per jenis", hint="distribusi",
+                ),
+                289,
+            )
     with a2:
-        _panel("Outreach per hari", "14 hari")
         daily = [r for r in queries.events_daily(_engine()) if "error" not in r]
         if daily:
-            _chart(charts.activity_chart_component(daily, height=245), 265)
+            _chart(
+                charts.activity_chart_component(
+                    daily, height=240, title="Outreach per hari", hint="14 hari",
+                ),
+                284,
+            )
 
 
 # --- Export ------------------------------------------------------------------

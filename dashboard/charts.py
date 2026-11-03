@@ -15,6 +15,7 @@ Pure module: no Streamlit import — hermetically testable.
 
 from __future__ import annotations
 
+import html as _html
 import json
 from pathlib import Path
 
@@ -52,24 +53,65 @@ def _echarts_js() -> str:
     return _ECHARTS_PATH.read_text(encoding="utf-8")
 
 
-def _html_doc(option: dict, height: int = 300, borderless: bool = False) -> str:
-    """Render one ECharts option into a full responsive HTML doc."""
+def _html_doc(option: dict, height: int = 300, title: str = "", hint: str = "") -> str:
+    """Render one ECharts option into a full responsive HTML doc.
+
+    When title is set the doc is a self-contained panel card (header +
+    chart) — components render in their own iframe, so the whole panel
+    must be embedded here, not in the parent markdown.
+    """
     option_json = json.dumps(option, ensure_ascii=False)
+    head = ""
+    panel_css = ""
+    chart_css = f"#chart {{ width: 100%; height: {height}px; }}"
+    if title:
+        hint_html = f"<small>{_html.escape(hint)}</small>" if hint else ""
+        head = (
+            f'<div class="nc-chart-title">{_html.escape(title)}{hint_html}</div>'
+        )
+        total = height + 44  # header row + paddings
+        panel_css = f"""
+  .nc-chart-panel {{
+    background: linear-gradient(180deg, rgba(23,34,56,0.55), {PALETTE["panel"]});
+    border: 1px solid rgba(148,163,184,0.14);
+    border-radius: 14px;
+    padding: 6px 8px 10px 8px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+  }}
+  .nc-chart-panel:hover {{ border-color: rgba(0,229,255,0.30); }}
+  .nc-chart-title {{
+    font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600;
+    color: #F1F5F9; padding: 8px 8px 2px 8px; letter-spacing: 0.02em;
+  }}
+  .nc-chart-title small {{
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 400;
+    color: #64748B; margin-left: 8px; letter-spacing: 0.06em;
+  }}
+  .wrap {{ height: {total}px; display: flex; flex-direction: column; }}
+"""
+        chart_css = f"#chart {{ width: 100%; height: {height}px; flex: 1; }}"
+        body_open = '<div class="wrap nc-chart-panel">' + head
+        body_close = "</div>"
+    else:
+        body_open = ""
+        body_close = ""
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
 <style>
   html, body {{ margin: 0; padding: 0; background: transparent;
     font-family: 'JetBrains Mono', monospace; }}
-  #chart {{ width: 100%; height: {height}px; }}
+{panel_css}
+{chart_css}
   @media (prefers-reduced-motion: reduce) {{
     #chart * {{ transition: none !important; animation: none !important; }}
   }}
 </style>
 </head>
 <body>
-<div id="chart"></div>
+{body_open}<div id="chart"></div>{body_close}
 <script>
 {_echarts_js()}
 </script>
@@ -322,7 +364,7 @@ def sparkline_svg(values: list[int], color: str | None = None, width: int = 120,
 # --- full components (html doc) ------------------------------------------------
 
 
-def activity_chart_component(daily_rows: list[dict], height: int = 300) -> str:
+def activity_chart_component(daily_rows: list[dict], height: int = 300, title: str = "", hint: str = "") -> str:
     """events_daily rows → smooth area chart (cyan primary, purple others)."""
     by_day: dict[str, dict[str, int]] = {}
     types: list[str] = []
@@ -343,19 +385,66 @@ def activity_chart_component(daily_rows: list[dict], height: int = 300) -> str:
             "color": color,
             "fill": fill,
         })
-    return _html_doc(area_option(days, series), height=height)
+    return _html_doc(area_option(days, series), height=height, title=title, hint=hint)
 
 
-def donut_chart_component(rows: list[tuple[str, int]], center_label: str = "", height: int = 280) -> str:
-    return _html_doc(donut_option(rows, center_label), height=height)
+def donut_chart_component(rows: list[tuple[str, int]], center_label: str = "", height: int = 280, title: str = "", hint: str = "") -> str:
+    return _html_doc(donut_option(rows, center_label), height=height, title=title, hint=hint)
 
 
-def bar_chart_component(categories: list[str], values: list[int], height: int = 260, horizontal: bool = False) -> str:
-    return _html_doc(bar_option(categories, values, horizontal=horizontal), height=height)
+def bar_chart_component(categories: list[str], values: list[int], height: int = 260, horizontal: bool = False, title: str = "", hint: str = "") -> str:
+    return _html_doc(bar_option(categories, values, horizontal=horizontal), height=height, title=title, hint=hint)
 
 
-def gauge_chart_component(value: float, name: str, max_value: float = 100, height: int = 170) -> str:
-    return _html_doc(gauge_option(value, name, max_value), height=height)
+def gauge_chart_component(value: float, name: str, max_value: float = 100, height: int = 170, title: str = "", hint: str = "") -> str:
+    return _html_doc(gauge_option(value, name, max_value), height=height, title=title, hint=hint)
+
+
+def mail_preview_component(body_html: str, height: int = 340, title: str = "Pratinjau HTML", hint: str = "mail client simulation") -> str:
+    """Render an outreach email body inside a dark panel (sandboxed doc)."""
+    hint_html = f"<small>{_html.escape(hint)}</small>" if hint else ""
+    escaped_body = _html.escape(body_html)
+    total = height + 44
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+  html, body {{ margin: 0; padding: 0; background: transparent;
+    font-family: 'Inter', system-ui, sans-serif; }}
+  .nc-chart-panel {{
+    background: linear-gradient(180deg, rgba(23,34,56,0.55), {PALETTE["panel"]});
+    border: 1px solid rgba(148,163,184,0.14);
+    border-radius: 14px;
+    padding: 6px 8px 10px 8px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+  }}
+  .nc-chart-title {{
+    font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600;
+    color: #F1F5F9; padding: 8px 8px 2px 8px; letter-spacing: 0.02em;
+  }}
+  .nc-chart-title small {{
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 400;
+    color: #64748B; margin-left: 8px; letter-spacing: 0.06em;
+  }}
+  .wrap {{ height: {total}px; display: flex; flex-direction: column; }}
+  .frame {{
+    flex: 1; margin: 0 4px 4px 4px; border-radius: 10px;
+    background: {PALETTE["panel"]}; overflow: hidden;
+    border: 1px solid rgba(148,163,184,0.12);
+  }}
+  iframe {{ width: 100%; height: 100%; border: 0; display: block;
+    background: #0B1120; }}
+</style>
+</head>
+<body>
+<div class="wrap nc-chart-panel">
+  <div class="nc-chart-title">{_html.escape(title)}{hint_html}</div>
+  <div class="frame"><iframe srcdoc="{escaped_body}"></iframe></div>
+</div>
+</body>
+</html>"""
 
 
 # --- kpi grid component (count-up + sparklines) ---------------------------------

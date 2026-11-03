@@ -125,9 +125,15 @@ def theme_css() -> str:
   max-width: 1440px;
 }}
 
-#MainMenu, header[data-testid="stHeader"], footer,
+#MainMenu, footer,
 [data-testid="stDecoration"], [data-testid="stStatusWidget"] {{
   display: none !important;
+}}
+/* streamlit's own top strip: keep (holds the sidebar collapse control) but
+   make it invisible on the dark shell */
+header[data-testid="stHeader"] {{
+  background: transparent !important;
+  color: var(--nc-text-3) !important;
 }}
 
 h1 {{
@@ -203,19 +209,42 @@ section[data-testid="stSidebar"] hr {{ border-color: rgba(148,163,184,0.12); }}
   font-weight: 400; color: var(--nc-text-3); letter-spacing: 0.18em;
 }}
 
-/* radio nav → command list */
-section[data-testid="stSidebar"] [role="radiogroup"] {{ gap: 3px; }}
-section[data-testid="stSidebar"] label {{
+/* radio nav → command list (Streamlit 1.6x react-aria DOM) */
+section[data-testid="stSidebar"] [role="radiogroup"] {{ gap: 2px; }}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"] {{
+  display: block;
+  padding: 9px 10px;
+  margin: 1px 0;
   border-radius: {RADII['md']};
-  transition: background 160ms ease, box-shadow 160ms ease;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
 }}
-section[data-testid="stSidebar"] label:hover {{ background: rgba(0,229,255,0.05); }}
-section[data-testid="stSidebar"] label:has(input:checked) {{
-  background: linear-gradient(90deg, rgba(0,229,255,0.13), rgba(0,229,255,0.04));
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"]:hover {{
+  background: rgba(0,229,255,0.06);
+}}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"][data-selected="true"] {{
+  background: linear-gradient(90deg, rgba(0,229,255,0.14), rgba(0,229,255,0.04));
+  border-color: rgba(0,229,255,0.22);
   box-shadow: inset 3px 0 0 0 var(--nc-cyan);
 }}
-section[data-testid="stSidebar"] label:has(input:checked) span {{ color: var(--nc-text); font-weight: 600; }}
-section[data-testid="stSidebar"] label span {{ font-size: 13.5px; }}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"][data-selected="true"] span {{
+  color: var(--nc-text); font-weight: 600;
+}}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"] span {{ font-size: 13.5px; }}
+/* the native circle indicator — keep the layout row, drop the dot */
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"] > div:first-of-type > div:first-child {{
+  display: none !important;
+}}
+
+/* sidebar collapse arrow */
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="stSidebarCollapseButton"] button {{
+  color: var(--nc-text-2) !important;
+  background: rgba(16,25,42,0.8) !important;
+  border: 1px solid rgba(148,163,184,0.18) !important;
+  border-radius: 8px !important;
+}}
 
 /* sidebar status block */
 .nc-side-status {{
@@ -440,9 +469,19 @@ pre, code, [data-testid="stCodeBlock"] {{
 
 /* ---- page header block --------------------------------------------------------- */
 
-.nc-pagehead {{ margin-bottom: 14px; }}
+.nc-pagehead {{ margin: 4px 0 20px 0; animation: nc-fade-in 240ms ease-out both; }}
+.nc-pagehead .title {{
+  font-family: var(--nc-font-head); font-size: 26px; font-weight: 700;
+  color: var(--nc-text); letter-spacing: -0.01em; line-height: 1.2;
+}}
+.nc-pagehead .title::after {{
+  content: ""; display: block; width: 56px; height: 3px; margin-top: 8px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--nc-cyan), rgba(139,92,246,0.9));
+  box-shadow: 0 0 12px rgba(0,229,255,0.35);
+}}
 .nc-pagehead .sub {{
-  font-size: 13px; color: var(--nc-text-3); margin-top: 2px; max-width: 860px;
+  font-size: 13px; color: var(--nc-text-3); margin-top: 8px; max-width: 860px;
 }}
 
 /* ---- email preview frame --------------------------------------------------------- */
@@ -544,8 +583,14 @@ def topbar(page: str, badges_html: list[str]) -> str:
 
 
 def page_header(title: str, subtitle: str = "") -> str:
+    """Full page header: styled title + subtitle (replaces st.title)."""
     sub = f'<div class="sub">{esc(subtitle)}</div>' if subtitle else ""
-    return f'<div class="nc-pagehead">{sub}</div>'
+    return (
+        f'<div class="nc-pagehead">'
+        f'<div class="title">{esc(title)}</div>'
+        f"{sub}"
+        f"</div>"
+    )
 
 
 def chart_panel(title: str, hint: str = "", body: str = "") -> str:
