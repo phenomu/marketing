@@ -192,9 +192,28 @@ def _mark_contacted(engine: Engine, lead_id: int) -> None:
         log.warning("mark contacted failed (lead=%s): %s", lead_id, exc)
 
 
-def _unsubscribe_url(email: str) -> str:
+def unsubscribe_url(email: str) -> str:
+    """Public one-click unsubscribe URL for an address."""
     token = make_token(email)
     return f"{settings.unsubscribe_base_url}/unsubscribe?token={quote(token)}"
+
+
+def _unsubscribe_url(email: str) -> str:
+    return unsubscribe_url(email)
+
+
+def set_campaign_status(engine: Engine, campaign_id: int, status: str) -> bool:
+    """Operator action: draft|running|paused|done. Only valid transitions
+    are accepted; worker picks up running campaigns on its next tick."""
+    if status not in ("draft", "running", "paused", "done"):
+        raise ValueError(f"invalid campaign status: {status}")
+    from sqlalchemy import update as sa_update
+
+    with engine.begin() as conn:
+        result = conn.execute(
+            sa_update(CAMPAIGNS).where(CAMPAIGNS.c.id == campaign_id).values(status=status)
+        )
+    return bool(result.rowcount)
 
 
 def run_campaign(engine: Engine, campaign_id: int, limit: int | None = None) -> dict:
