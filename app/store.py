@@ -645,6 +645,7 @@ def list_leads(
 ) -> list[dict]:
     stmt = (
         select(
+            LEADS.c.id,
             LEADS.c.business_id,
             LEADS.c.best_email,
             LEADS.c.email_status,
