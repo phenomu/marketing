@@ -19,6 +19,7 @@ from app.crawl import enqueue_crawls, run_pending_crawls
 from app.extract import run_pending_extractions
 from app.leads import build_leads
 from app.validation import run_validation_batch
+from app.outreach.campaign import run_campaigns, run_followups
 from app.heartbeat import write_heartbeat
 from config import settings
 from config.logging_setup import setup_logging
@@ -67,9 +68,29 @@ def run() -> None:
                             extract_stats["jobs"], extract_stats["new"],
                             extract_stats["updated"],
                         )
+                    validation_stats = run_validation_batch(limit=settings.validate_batch_limit)
+                    if validation_stats["emails"]:
+                        log.info(
+                            "validation batch: %s email(s) — %s valid, %s invalid, %s unknown",
+                            validation_stats["emails"], validation_stats["valid"],
+                            validation_stats["invalid"], validation_stats["unknown"],
+                        )
+                    if validation_stats["emails"] or extract_stats["jobs"]:
+                        lead_stats = build_leads(get_engine())
+                        if lead_stats["new"] or lead_stats["updated"]:
+                            log.info(
+                                "leads rebuilt: %s new, %s updated",
+                                lead_stats["new"], lead_stats["updated"],
+                            )
+                    outreach_stats = run_campaigns(get_engine())
+                    if outreach_stats["campaigns"]:
+                        log.info("outreach batch: %s", outreach_stats)
+                    followup_stats = run_followups(get_engine())
+                    if followup_stats["checked"]:
+                        log.info("followup batch: %s", followup_stats)
                 except Exception as exc:  # noqa: BLE001 — service loop must survive
                     log.exception("worker batch failed: %s", exc)
-            # Next up: PHASE 5 validation + lead management on the contacts table.
+            # Next up: PHASE 7 dashboard real (TRACKER.md).
             time.sleep(settings.worker_interval_s)
     except KeyboardInterrupt:
         log.info("worker stopped")
