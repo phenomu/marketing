@@ -55,6 +55,45 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# --- security gate (PHASE 9, D-032) ------------------------------------------
+
+# Streamlit runs in the operator's browser and cannot set custom headers,
+# so the auth token arrives as ?token=… (bookmarkable). The same
+# API_AUTH_TOKEN gates the FastAPI backend (app.auth). Empty token =
+# auth disabled (localhost default); setting it enables the gate in ANY
+# environment — one switch, no way to enable in dev but forget in prod.
+_query_token = st.query_params.get("token", "").strip()
+
+_auth_expected = ""
+try:  # imported here so tests can monkeypatch app.auth before import
+    from app.auth import auth_token as _auth_token
+
+    _auth_expected = _auth_token().strip()
+except Exception:  # noqa: BLE001 — auth import must never break the UI
+    _auth_expected = ""
+
+if _auth_expected and _query_token != _auth_expected:
+    st.markdown(theme.theme_css(), unsafe_allow_html=True)
+    st.markdown(
+        theme.page_header("Akses ditolak", "Autentikasi diperlukan."),
+        unsafe_allow_html=True,
+    )
+    st.warning(
+        "Dashboard ini memerlukan token akses. Buka URL dengan parameter "
+        "`?token=…` (nilai = API_AUTH_TOKEN environment variable)."
+    )
+    st.stop()
+if _query_token:
+    # keep the token out of the address bar after a successful auth:
+    # replace ?token=… with a session flag so it is not re-sent on every
+    # click / bookmarked / leaked via referrer.
+    if st.session_state.get("nc_auth") is True or _query_token == _auth_expected:
+        st.session_state["nc_auth"] = True
+        try:
+            del st.query_params["token"]
+        except Exception:  # noqa: BLE001 — cosmetic, never fatal
+            pass
+
 st.markdown(theme.theme_css(), unsafe_allow_html=True)
 
 PAGES = [

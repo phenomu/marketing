@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import logging
 
 import app
+from app.auth import auth_middleware
 from app.db import check_db, get_engine
 from config import settings
 from config.logging_setup import setup_logging
@@ -30,6 +32,9 @@ api = FastAPI(
     redoc_url=None if settings.app_env == "production" else "/redoc",
     openapi_url="/openapi.json" if settings.app_env != "production" else None,
 )
+
+# PHASE 9 (D-032): opt-in token auth — no-op while API_AUTH_TOKEN is unset.
+api.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
 
 
 @api.get("/")

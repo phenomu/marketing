@@ -12,3 +12,9 @@ import os
 
 if "DATABASE_URL" not in os.environ and "POSTGRES_PASSWORD" not in os.environ:
     os.environ["DATABASE_URL"] = f"sqlite:///{ROOT / 'data' / 'marketing-test.db'}"
+
+# Auth must be OFF for the suite as a whole — test_auth.py monkeypatches
+# the token reader per test. A stray API_AUTH_TOKEN from the environment
+# (e.g. exported in a production shell or CI matrix) would 401 every
+# unrelated API test.
+os.environ.pop("API_AUTH_TOKEN", None)
