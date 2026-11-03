@@ -90,6 +90,19 @@ python -m app.export --min-score 60        # hanya lead bagus
 python -m app.export --email-status valid  # hanya email tervalidasi
 ```
 
+### Outreach engine (PHASE 6)
+
+Campaign email dengan **DRY RUN sebagai mode default** — tanpa `DRY_RUN=false` + kredensial SMTP lengkap + `OUTREACH_SEND_LIVE=true` (tiga syarat sekaligus), tidak ada email yang benar-benar keluar. Semua "kirim" dicatat sebagai event `sent-dry`:
+
+```bash
+python -m app.outreach_cli campaign-create --name q1 --subject "..." --body-file body.txt
+python -m app.outreach_cli campaign-run --id 1        # dry-run batch
+python -m app.outreach_cli campaign-start --id 1      # worker kirim tiap tick (dry)
+python -m app.outreach_cli preview --id 1 --lead 3    # lihat email hasil render
+```
+
+Fitur kepatuhan bawaan: personalisasi dari data bisnis (nama/kategori/lokasi), header `List-Unsubscribe` (RFC 8058 one-click) di tiap email, link unsubscribe publik (`/unsubscribe?token=...` — HMAC, berlaku selamanya), suppression list, deteksi hard-bounce via import CSV, duplicate-send prevention per campaign, dan limit harian global (`OUTREACH_SEND_PER_DAY`). Follow-up otomatis per `followup_days` campaign.
+
 ### Contact extraction (PHASE 4)
 
 Setiap crawl selesai, worker otomatis menambang kontak dari teks halaman tersimpan: email (mailto + teks + bentuk obfuscated `nama (at) domain (dot) com`), nomor telepon Indonesia (08xx/+62 dinormalisasi ke +62…, termasuk link wa.me), profil sosmed (Instagram/Facebook/TikTok/LinkedIn/YouTube/X), dan alamat jalan (`Jl./Jalan/…`). Kontak disimpan di tabel `contacts` dengan dedup per bisnis, sumber URL, dan skor confidence (halaman kontak > about > home; mailto > link > teks).
