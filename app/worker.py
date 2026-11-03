@@ -15,7 +15,8 @@ import time
 
 from app.db import check_db, get_engine
 from app.discovery import run_pending_jobs
-from app.crawl import enqueue_crawls, run_pending_crawls
+from app.backfill import backfill_listing_phones
+from app.crawl import run_pending_crawls
 from app.extract import run_pending_extractions
 from app.leads import build_leads
 from app.validation import run_validation_batch
@@ -44,6 +45,22 @@ def run() -> None:
                             "discovery batch: %s jobs, %s new, %s updated",
                             stats["jobs"], stats["new"], stats["updated"],
                         )
+                        # listing phones (businesses.phone from gmaps/serpapi)
+                        # must reach the contacts table or leads never see
+                        # them — promote + rebuild immediately
+                        fill = backfill_listing_phones(get_engine())
+                        if fill["inserted"]:
+                            log.info(
+                                "listing phones promoted: %s contact(s)",
+                                fill["inserted"],
+                            )
+                        if fill["inserted"]:
+                            lead_stats = build_leads(get_engine())
+                            if lead_stats["new"] or lead_stats["updated"]:
+                                log.info(
+                                    "leads rebuilt: %s new, %s updated",
+                                    lead_stats["new"], lead_stats["updated"],
+                                )
                     # drain crawl jobs one domain at a time so the heartbeat
                     # stays fresh while long crawls run (compose healthcheck
                     # marks the worker unhealthy otherwise)

@@ -374,7 +374,6 @@ elif page == "Lead Discovery":
                         location.strip(), int(max_results)
                     )
                     st.success(f"Job #{job_id} pending — worker proses tick berikutnya.")
-                    st.toast("Job di-enqueue", icon="⌖")
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"Gagal: {exc}")
 
