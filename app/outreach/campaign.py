@@ -98,6 +98,56 @@ def get_campaign(engine: Engine, campaign_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+EDITABLE_FIELDS = (
+    "subject",
+    "body_text",
+    "body_html",
+    "followup_subject",
+    "followup_body_text",
+    "followup_body_html",
+    "min_score",
+    "followup_days",
+)
+
+
+def update_campaign_template(
+    engine: Engine, campaign_id: int, **fields
+) -> bool:
+    """Operator action: edit a campaign's template fields (subject,
+    bodies, follow-up, thresholds). Status, name and id are never
+    touched here — use set_campaign_status for lifecycle. Raises
+    ValueError on invalid input; returns False when the id is unknown.
+    Text fields are stripped; blank required fields are rejected."""
+    if not fields:
+        raise ValueError("no fields to update")
+    unknown = set(fields) - set(EDITABLE_FIELDS)
+    if unknown:
+        raise ValueError(f"not editable: {sorted(unknown)}")
+    clean: dict = {}
+    for key, value in fields.items():
+        if key in ("min_score", "followup_days"):
+            try:
+                clean[key] = int(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{key} must be an integer") from exc
+        else:
+            text = (value or "").strip()
+            if key in ("subject", "body_text") and not text:
+                raise ValueError(f"{key} cannot be empty")
+            clean[key] = text
+    if not clean:
+        raise ValueError("no valid fields to update")
+    with engine.begin() as conn:
+        result = conn.execute(
+            update(CAMPAIGNS).where(CAMPAIGNS.c.id == campaign_id).values(**clean)
+        )
+        updated = result.rowcount or 0
+    if not updated:
+        return False
+    log.info("campaign %s template updated: %s", campaign_id, sorted(clean))
+    return True
+
+
 def _suppressed_emails(engine: Engine) -> set[str]:
     with engine.connect() as conn:
         return {r[0] for r in conn.execute(select(SUPPRESSIONS.c.email_norm)).all()}

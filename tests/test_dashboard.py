@@ -25,7 +25,12 @@ from app.store import upsert_leads
 from app.export import leads_csv_bytes, export_leads_csv
 from dashboard import queries
 from tests.test_outreach import _seed, _campaign
-from app.outreach.campaign import run_campaign, set_campaign_status
+from app.outreach.campaign import (
+    get_campaign,
+    run_campaign,
+    set_campaign_status,
+    update_campaign_template,
+)
 
 
 @pytest.fixture
@@ -195,3 +200,64 @@ class TestDiscoveryPage:
             )
         rows = queries.suppressions_table(engine)
         assert rows[0]["email_norm"] == "x@y.com"
+
+
+class TestCampaignTemplateEdit:
+    """update_campaign_template: edit template fields, validation, and
+    the dashboard CSV preview parser (commas inside quoted fields)."""
+
+    def test_update_subject_and_body(self, engine):
+        _seed(engine)
+        cid = _campaign(engine, name="edit1")
+        ok = update_campaign_template(
+            engine, cid, subject="Halo {{name}}", body_text="Baru"
+        )
+        assert ok is True
+        camp = get_campaign(engine, cid)
+        assert camp["subject"] == "Halo {{name}}"
+        assert camp["body_text"] == "Baru"
+
+    def test_update_rejects_empty_required(self, engine):
+        _seed(engine)
+        cid = _campaign(engine, name="edit2")
+        with pytest.raises(ValueError):
+            update_campaign_template(engine, cid, subject="  ")
+
+    def test_update_rejects_unknown_field(self, engine):
+        _seed(engine)
+        cid = _campaign(engine, name="edit3")
+        with pytest.raises(ValueError):
+            update_campaign_template(engine, cid, name="hacked", subject="x")
+
+    def test_update_unknown_id_returns_false(self, engine):
+        _seed(engine)
+        assert update_campaign_template(engine, 999, subject="x") is False
+
+    def test_update_int_fields(self, engine):
+        _seed(engine)
+        cid = _campaign(engine, name="edit4")
+        ok = update_campaign_template(
+            engine, cid, min_score="70", followup_days="3"
+        )
+        assert ok is True
+        camp = get_campaign(engine, cid)
+        assert camp["min_score"] == 70
+        assert camp["followup_days"] == 3
+
+    def test_csv_rows_handles_quoted_commas(self):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from dashboard import main as dash_main
+
+        payload = (
+            "score,name,address\n"
+            '10,B,"Jl. Satu, Dua"\n'
+            "20,C,Bandung\n"
+        ).encode("utf-8-sig")
+        df = dash_main._csv_rows(payload)
+        assert list(df.columns) == ["score", "name", "address"]
+        assert len(df) == 2
+        assert df.iloc[0]["address"] == "Jl. Satu, Dua"
+        assert df.iloc[1]["address"] == "Bandung"
