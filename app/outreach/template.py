@@ -93,7 +93,15 @@ def render_message(
 ) -> tuple[str, str, str]:
     """Render subject + both bodies for one lead. Returns
     (subject, body_text, body_html). Missing business data collapses to
-    neutral phrasing, never an error."""
+    neutral phrasing, never an error.
+
+    HTML body: business-provided fields (name, category, location,
+    domain, sender identity) are HTML-escaped at substitution time —
+    scraped names are untrusted input and must never become markup
+    (phishing/link injection into the sent email). `unsubscribe_url`
+    stays raw: it is server-generated (HMAC token) and must remain a
+    valid href.
+    """
     ctx = build_context(lead, sender_name, sender_email, unsubscribe_url)
     # location: businesses table has no city column — collapse to category
     # phrasing when empty
@@ -101,17 +109,11 @@ def render_message(
         ctx["location"] = ctx["category"] or "Indonesia"
     subject_r = render(subject, ctx)
     text_r = render(body_text, ctx)
-    html_r = render(body_html, ctx) if body_html else ""
+    html_r = ""
+    if body_html:
+        html_ctx = dict(ctx)
+        for key in ("name", "category", "location", "domain",
+                    "sender_name", "sender_email"):
+            html_ctx[key] = html.escape(str(html_ctx[key]), quote=True)
+        html_r = render(body_html, html_ctx)
     return subject_r, text_r, html_r
-
-
-def escape_html_fields(body_html: str, lead: dict) -> str:
-    """Escape business-provided fields interpolated into HTML. Business
-    names come from scraped listings — never trust them as markup
-    (XSS-in-email / phishing-injection defense). Call AFTER render, on
-    values only — render() output here keeps placeholders safe."""
-    for field in ("name", "category", "domain"):
-        value = lead.get(field, "")
-        if value and value in body_html:
-            body_html = body_html.replace(value, html.escape(value, quote=False))
-    return body_html
