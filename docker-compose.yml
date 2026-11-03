@@ -105,7 +105,7 @@ services:
   dashboard:
     <<: *app-base
     profiles: [full, dashboard]
-    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    command: streamlit run dashboard/main.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
     environment:
       <<: *app-env
       BACKEND_URL: ${DASHBOARD_BACKEND_URL:-http://api:8000} # container network default

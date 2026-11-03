@@ -103,6 +103,21 @@ python -m app.outreach_cli preview --id 1 --lead 3    # lihat email hasil render
 
 Fitur kepatuhan bawaan: personalisasi dari data bisnis (nama/kategori/lokasi), header `List-Unsubscribe` (RFC 8058 one-click) di tiap email, link unsubscribe publik (`/unsubscribe?token=...` — HMAC, berlaku selamanya), suppression list, deteksi hard-bounce via import CSV, duplicate-send prevention per campaign, dan limit harian global (`OUTREACH_SEND_PER_DAY`). Follow-up otomatis per `followup_days` campaign.
 
+### Dashboard (PHASE 7)
+
+Streamlit multi-page di `http://127.0.0.1:8501` (atau `python -m streamlit run dashboard/main.py`):
+
+- **Overview** — metrik bisnis/kontak/lead/suppression + status crawl, campaign, dan event outreach.
+- **Lead Discovery** — antrian job discovery & crawl + form enqueue job baru.
+- **Lead Management** — filter skor/status + tabel + download CSV.
+- **Lead Detail** — bisnis, breakdown skor, kontak, riwayat outreach per lead.
+- **Campaigns** — start/pause/done, kirim 1 batch (dry), riwayat event, buat campaign baru.
+- **Email Preview** — render email persis seperti yang dikirim.
+- **Analytics** — distribusi skor, kontak per jenis, outreach per hari.
+- **Export** — CSV lead (byte-identical dengan `python -m app.export`).
+
+Dashboard membaca DB langsung via layer store yang sama dengan worker — tidak ada endpoint API data baru. Aksi tulis memakai fungsi yang sama dengan CLI/worker (DRY RUN dan safety rail PHASE 6 tetap berlaku).
+
 ### Contact extraction (PHASE 4)
 
 Setiap crawl selesai, worker otomatis menambang kontak dari teks halaman tersimpan: email (mailto + teks + bentuk obfuscated `nama (at) domain (dot) com`), nomor telepon Indonesia (08xx/+62 dinormalisasi ke +62…, termasuk link wa.me), profil sosmed (Instagram/Facebook/TikTok/LinkedIn/YouTube/X), dan alamat jalan (`Jl./Jalan/…`). Kontak disimpan di tabel `contacts` dengan dedup per bisnis, sumber URL, dan skor confidence (halaman kontak > about > home; mailto > link > teks).
@@ -152,7 +167,7 @@ marketing/
 ├── config/
 │   ├── settings.py         # env-only settings (single source of truth)
 │   └── logging_setup.py    # stdout + rotating file
-├── dashboard/app.py        # Streamlit status page
+├── dashboard/main.py        # Streamlit status page
 ├── scripts/                # sanity.py, init_db.py, heartbeat_check.py
 ├── tests/                  # 46 unit test
 ├── conftest.py
@@ -238,7 +253,7 @@ Semua via environment variable, tidak ada secret hardcode. Daftar lengkap di `.e
 python scripts/sanity.py                       # cek settings + DB (native/container)
 python scripts/init_db.py                      # schema init/migrasi
 python scripts/heartbeat_check.py worker       # healthcheck manual service non-HTTP
-python -m streamlit run dashboard/app.py       # dashboard native
+python -m streamlit run dashboard/main.py       # dashboard native
 docker compose --profile dashboard up -d       # dashboard container → 127.0.0.1:8501
 ```
 
