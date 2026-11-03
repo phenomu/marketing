@@ -70,6 +70,7 @@ class Settings:
     smtp_port: int
     smtp_user: str
     smtp_pass: str
+    smtp_from: str
     sender_name: str
     dry_run: bool
     lead_source: str
@@ -90,6 +91,12 @@ class Settings:
     crawl_batch_limit: int
     extract_batch_limit: int
     validate_batch_limit: int
+    outreach_send_live: bool
+    outreach_batch_limit: int
+    outreach_send_per_day: int
+    smtp_timeout_s: int
+    unsubscribe_base_url: str
+    unsubscribe_secret: str
 
     @property
     def is_production(self) -> bool:
@@ -129,6 +136,7 @@ def build_settings() -> Settings:
         smtp_port=get_int("SMTP_PORT", 587),
         smtp_user=get("SMTP_USER", ""),
         smtp_pass=get("SMTP_PASS", ""),
+        smtp_from=get("SMTP_FROM", ""),
         sender_name=get("SENDER_NAME", "MARKETING"),
         dry_run=get_bool("DRY_RUN", True),
         lead_source=get("LEAD_SOURCE", "gmaps_scrape").strip().lower(),
@@ -152,6 +160,12 @@ def build_settings() -> Settings:
         crawl_batch_limit=get_int("CRAWL_BATCH_LIMIT", 5),
         extract_batch_limit=get_int("EXTRACT_BATCH_LIMIT", 10),
         validate_batch_limit=get_int("VALIDATE_BATCH_LIMIT", 5),
+        outreach_send_live=get_bool("OUTREACH_SEND_LIVE", False),
+        outreach_batch_limit=get_int("OUTREACH_BATCH_LIMIT", 10),
+        outreach_send_per_day=get_int("OUTREACH_SEND_PER_DAY", 50),
+        smtp_timeout_s=get_int("SMTP_TIMEOUT_S", 15),
+        unsubscribe_base_url=get("UNSUBSCRIBE_BASE_URL", "http://127.0.0.1:8000").rstrip("/"),
+        unsubscribe_secret=get("UNSUBSCRIBE_SECRET", ""),
     )
 
 
