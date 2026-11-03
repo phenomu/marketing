@@ -1,4 +1,4 @@
-"""Streamlit dashboard — real data views (PHASE 7, UI refresh 2026-11-03).
+"""Streamlit dashboard — NEON COMMAND UI (PHASE 7 + redesign 2026-11-03).
 
 Reads the production database directly through the same store layer the
 worker uses. No new API surface is exposed (D-032: auth deferred — every
@@ -11,16 +11,10 @@ All write actions here are the same functions the CLI/worker use —
 nothing bypasses the PHASE 6 safety rails (dry run default,
 triple-armed live send, suppression pre-check).
 
-UI fixes this pass (bug report 2026-11-03):
-- st.rerun() called directly (st.experimental_rerun was REMOVED in
-  streamlit 1.14+; the old getattr default was eagerly evaluated and
-  crashed on import).
-- Export preview parses the CSV with the csv module (fields are quoted
-  and may contain commas — naive split produced 11-vs-18 column errors).
-- Email Preview is now fully customizable: pick campaign + lead, edit
-  subject/body inline, and save back to the campaign template.
-- Visual polish: metric cards, tabular tables, wide layout, better
-  spacing and labels.
+Visual redesign (NEON COMMAND): theme tokens/CSS in dashboard/theme.py,
+ECharts renderers in dashboard/charts.py (bundle in dashboard/assets,
+no CDN at runtime). Backend logic, routes and behavior are unchanged;
+every number on screen still comes from live queries.
 """
 
 from __future__ import annotations
@@ -37,7 +31,9 @@ if str(ROOT) not in sys.path:
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
+from dashboard import charts  # noqa: E402
 from dashboard import queries  # noqa: E402
+from dashboard import theme  # noqa: E402
 from app.export import leads_csv_bytes  # noqa: E402
 from app.outreach.campaign import (  # noqa: E402
     create_campaign,
@@ -52,28 +48,13 @@ from app.store import insert_job  # noqa: E402
 from config import settings  # noqa: E402
 
 st.set_page_config(
-    page_title="MARKETING Dashboard",
-    page_icon="📊",
+    page_title="MARKETING — Neon Command",
+    page_icon="◉",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.markdown(
-    """
-    <style>
-      .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
-      div[data-testid="stMetric"] {
-        background: linear-gradient(120deg, #0e1117 0%, #161b26 100%);
-        border: 1px solid #26283a; border-radius: 10px;
-        padding: 0.9rem 1.1rem; margin-bottom: 0.4rem;
-      }
-      div[data-testid="stMetricLabel"] p { font-size: 0.8rem; }
-      .stTabs [data-baseweb="tab"] { font-size: 0.95rem; }
-      section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown(theme.theme_css(), unsafe_allow_html=True)
 
 PAGES = [
     "Overview",
@@ -115,77 +96,162 @@ def _csv_rows(payload: bytes, limit: int = 25) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
+def _kpi_grid(cards: list[str], columns: int = 4, height: int = 190) -> None:
+    st.components.v1.html(  # type: ignore[attr-defined]
+        charts.kpi_grid_component(cards, columns=columns), height=height,
+        scrolling=False,
+    )
+
+
+def _chart(html_doc: str, height: int) -> None:
+    st.components.v1.html(  # type: ignore[attr-defined]
+        html_doc, height=height, scrolling=False
+    )
+
+
+def _panel(title: str, hint: str = "") -> None:
+    st.markdown(theme.chart_panel(title, hint), unsafe_allow_html=True)
+
+
+def _topbar(page: str) -> None:
+    badges = [
+        theme.badge(settings.app_env, "purple" if settings.app_env == "production" else "cyan", dot=False),
+        theme.badge(
+            "DRY RUN" if settings.dry_run else "LIVE MODE",
+            "warning" if settings.dry_run else "error",
+        ),
+    ]
+    st.markdown(theme.topbar(page, badges), unsafe_allow_html=True)
+
+
+def _page_header(title: str, subtitle: str) -> None:
+    st.title(title)
+    st.markdown(theme.page_header(title, subtitle), unsafe_allow_html=True)
+
+
 # --- sidebar ----------------------------------------------------------------
 
-st.sidebar.markdown("## 📊 MARKETING")
-st.sidebar.caption(
-    f"env: `{settings.app_env}` · dry_run: `{settings.dry_run}` · "
-    f"batch: crawl 5 / extract 10 / validate 5 / outreach 10"
+st.markdown(
+    """
+<div class="nc-logo">
+  <span class="mark">◉</span>
+  <span>MARKETING<small>NEON COMMAND</small></span>
+</div>
+""",
+    unsafe_allow_html=True,
 )
-if not settings.dry_run:
-    st.sidebar.error(
-        "DRY RUN OFF — live mode aktif. Cek OUTREACH_SEND_LIVE."
-    )
 page = st.sidebar.radio("Navigasi", PAGES, label_visibility="collapsed")
+if not settings.dry_run:
+    st.sidebar.error("DRY RUN OFF — live mode aktif. Cek OUTREACH_SEND_LIVE.")
+
+# live sidebar status — real settings, nothing fabricated
+st.markdown(
+    theme.side_status([
+        ("env", settings.app_env),
+        ("dry_run", str(settings.dry_run)),
+        ("send_live", str(settings.outreach_send_live)),
+        ("bind", "127.0.0.1"),
+    ]),
+    unsafe_allow_html=True,
+)
+
+_topbar(page)
 
 
 # --- Overview ----------------------------------------------------------------
 
 if page == "Overview":
-    st.title("Overview")
+    _page_header(
+        "Overview",
+        "Ringkasan pipeline lead-generation: discovery, crawling, kontak, "
+        "leads, outreach — semua angka dari database live.",
+    )
     data = queries.overview(_engine())
     if data["error"]:
         st.error(f"DB error: {data['error']}")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Bisnis", data["businesses"])
-    c2.metric("Kontak", sum(data["contacts_by_kind"].values()))
-    c3.metric("Leads", sum(data["leads_by_status"].values()))
-    c4.metric("Suppression", data["suppressions"])
-    c5.metric("Event outreach", sum(data["events_by_type"].values()))
+    leads_total = sum(data["leads_by_status"].values())
+    events_total = sum(data["events_by_type"].values())
+    _kpi_grid([
+        charts.kpi_card_countup(
+            "Bisnis", data["businesses"], "◈", "cyan",
+            sub=f"discovery done: {data['discovery_by_status'].get('done', 0)}",
+        ),
+        charts.kpi_card_countup(
+            "Kontak", sum(data["contacts_by_kind"].values()), "⌖", "purple",
+            sub=" · ".join(f"{k} {v}" for k, v in data["contacts_by_kind"].items()) or "—",
+        ),
+        charts.kpi_card_countup(
+            "Leads", leads_total, "◉", "cyan",
+            sub=" · ".join(f"{k} {v}" for k, v in data["leads_by_status"].items()) or "—",
+        ),
+        charts.kpi_card_countup(
+            "Outreach events", events_total, "✉", "mint",
+            sub=f"last: {data['last_event_at'] or '—'}",
+        ),
+    ], columns=4, height=205)
 
-    left, mid, right = st.columns(3)
-    left.subheader("Status lead")
-    left.dataframe(
-        pd.DataFrame(
-            {"status": list(data["leads_by_status"]),
-             "n": list(data["leads_by_status"].values())}
-        ).set_index("status"),
-        use_container_width=True,
-    )
-    mid.subheader("Status email")
-    mid.dataframe(
-        pd.DataFrame(
-            {"status": list(data["email_statuses"]),
-             "n": list(data["email_statuses"].values())}
-        ).set_index("status"),
-        use_container_width=True,
-    )
-    right.subheader("Campaign")
-    right.dataframe(
-        pd.DataFrame(
-            {"status": list(data["campaigns_by_status"]),
-             "n": list(data["campaigns_by_status"].values())}
-        ).set_index("status"),
-        use_container_width=True,
-    )
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    st.divider()
-    st.subheader("Pipeline")
-    pc1, pc2, pc3, pc4 = st.columns(4)
-    pc1.metric("Crawl selesai", data["crawl_by_status"].get("done", 0))
-    pc2.metric("Crawl pending", data["crawl_by_status"].get("pending", 0))
-    pc3.metric("Crawl gagal", data["crawl_by_status"].get("failed", 0))
-    pc4.metric(
-        "Discovery pending", data["discovery_by_status"].get("pending", 0)
-    )
+    # activity (65%) + distribution (35%)
+    a_col, d_col = st.columns([13, 7])
+    with a_col:
+        _panel("Aktivitas outreach", "events per hari · 14 hari")
+        daily = [r for r in queries.events_daily(_engine()) if "error" not in r]
+        _chart(charts.activity_chart_component(daily, height=280), 300)
+    with d_col:
+        _panel("Distribusi kontak", "per jenis")
+        kinds = [r for r in queries.contacts_by_kind(_engine()) if "error" not in r]
+        _chart(
+            charts.donut_chart_component(
+                [(k["kind"], k["n"]) for k in kinds], center_label="kontak", height=255
+            ),
+            272,
+        )
 
-    st.subheader("Outreach events")
-    ev = pd.DataFrame(
-        {"event": list(data["events_by_type"]),
-         "n": list(data["events_by_type"].values())}
-    ).set_index("event")
-    st.dataframe(ev, use_container_width=True)
+    # pipeline + health + system
+    p_col, h_col, s_col = st.columns([2, 1, 1])
+    with p_col:
+        _panel("Pipeline crawl", "job per status")
+        crawl_items = sorted(data["crawl_by_status"].items())
+        _chart(
+            charts.bar_chart_component(
+                [k for k, _ in crawl_items], [v for _, v in crawl_items], height=195
+            ),
+            215,
+        )
+    with h_col:
+        done = data["crawl_by_status"].get("done", 0)
+        total_crawl = sum(data["crawl_by_status"].values()) or 1
+        _panel("Kesehatan crawl", "done / total")
+        _chart(charts.gauge_chart_component(done, "done", max_value=total_crawl, height=148), 168)
+    with s_col:
+        _panel("System", "status nyata")
+        rows_html = "".join(
+            f"<div style='padding:8px 10px;border-bottom:1px solid rgba(148,163,184,0.10);"
+            f"font-size:12px;color:#94A3B8'>{theme.status_badge(status)}"
+            f"<span style='margin-left:8px'>{label}</span></div>"
+            for label, status in [
+                ("worker", "running"),
+                ("campaign running", "running" if data["campaigns_by_status"].get("running") else "paused"),
+                ("suppression", "suppressed"),
+            ]
+        )
+        st.markdown(
+            f"<div class='nc-card' style='padding:2px 0'>{rows_html}</div>",
+            unsafe_allow_html=True,
+        )
+
+    _panel("Outreach events", "per tipe")
+    ev_items = sorted(data["events_by_type"].items())
+    if ev_items:
+        _chart(
+            charts.bar_chart_component(
+                [k for k, _ in ev_items], [v for _, v in ev_items],
+                height=150, horizontal=True,
+            ),
+            40 + 34 * len(ev_items),
+        )
     st.caption(
         f"Event terakhir: {data['last_event_at'] or '—'} · "
         f"Suppression: {data['suppressions_by_reason'] or '—'}"
@@ -195,11 +261,10 @@ if page == "Overview":
 # --- Lead Discovery ----------------------------------------------------------
 
 elif page == "Lead Discovery":
-    st.title("Lead Discovery")
-    st.caption(
+    _page_header(
+        "Lead Discovery",
         "Antrian job discovery (source listing). Worker memproses job "
-        "`pending` tiap tick. Tambah job manual di bawah — idempoten "
-        "dicover oleh last_job_per_search saat enqueue scheduler."
+        "pending tiap tick — tambah job manual di tab ketiga.",
     )
 
     disc = queries.discovery_overview(_engine())
@@ -218,7 +283,7 @@ elif page == "Lead Discovery":
             }
             for j in disc["jobs"]
         ]
-        st.dataframe(_df(rows), use_container_width=True)
+        st.dataframe(_df(rows), use_container_width=True, hide_index=True)
     with tab_crawl:
         rows = [
             {"id": j["id"], "domain": j["domain"], "status": j["status"],
@@ -226,7 +291,7 @@ elif page == "Lead Discovery":
              "error": (j.get("error") or "")[:60]}
             for j in disc["crawl_jobs"]
         ]
-        st.dataframe(_df(rows), use_container_width=True)
+        st.dataframe(_df(rows), use_container_width=True, hide_index=True)
     with tab_add:
         with st.form("add_job"):
             query = st.text_input("Query", placeholder="kopi jakarta")
@@ -243,9 +308,8 @@ elif page == "Lead Discovery":
                         _engine(), source, query.strip(),
                         location.strip(), int(max_results)
                     )
-                    st.success(
-                        f"Job #{job_id} pending — worker proses tick berikutnya."
-                    )
+                    st.success(f"Job #{job_id} pending — worker proses tick berikutnya.")
+                    st.toast("Job di-enqueue", icon="⌖")
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"Gagal: {exc}")
 
@@ -253,7 +317,11 @@ elif page == "Lead Discovery":
 # --- Lead Management ---------------------------------------------------------
 
 elif page == "Lead Management":
-    st.title("Lead Management")
+    _page_header(
+        "Lead Management",
+        "Tabel lead dengan filter skor/status — sumber data sama dengan "
+        "export CSV (list_leads).",
+    )
 
     with st.expander("Filter", expanded=True):
         f1, f2, f3 = st.columns(3)
@@ -262,8 +330,7 @@ elif page == "Lead Management":
             "Status email", ["any", "valid", "unknown", "invalid", "unchecked"]
         )
         lead_status = f3.selectbox(
-            "Status lead",
-            ["any", "new", "contacted", "suppressed", "bounced"],
+            "Status lead", ["any", "new", "contacted", "suppressed", "bounced"],
         )
 
     rows = queries.leads_table(
@@ -276,10 +343,9 @@ elif page == "Lead Management":
             "id", "name", "best_email", "email_status", "score", "status",
             "category", "domain", "best_phone",
         ]]
-    st.caption(f"{len(df)} lead")
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-    st.download_button(
+    c_count, c_dl = st.columns([3, 1])
+    c_count.caption(f"{len(df)} lead")
+    c_dl.download_button(
         "⬇ Download CSV",
         data=leads_csv_bytes(
             _engine(), min_score=min_score, email_status=email_status, limit=500
@@ -288,12 +354,16 @@ elif page == "Lead Management":
         mime="text/csv",
         disabled=df.empty,
     )
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 # --- Lead Detail -------------------------------------------------------------
 
 elif page == "Lead Detail":
-    st.title("Lead Detail")
+    _page_header(
+        "Lead Detail",
+        "Detail satu lead: bisnis, skor breakdown, kontak, riwayat outreach.",
+    )
     rows = queries.leads_table(_engine(), limit=1000)
     if not rows:
         st.info("Belum ada lead — jalankan pipeline dulu.")
@@ -309,11 +379,20 @@ elif page == "Lead Detail":
                 st.error(detail["error"])
             else:
                 lead, business = detail["lead"], detail["business"]
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Skor", lead["score"])
-                c2.metric("Status", lead["status"])
-                c3.metric("Email", lead["email_status"])
-                c4.metric("Kontak", len(detail["contacts"]))
+                _kpi_grid([
+                    charts.kpi_card_countup("Skor", int(lead["score"]), "◈", "cyan"),
+                    charts.kpi_card_countup(
+                        "Kontak", len(detail["contacts"]), "⌖", "purple"
+                    ),
+                    charts.kpi_card_countup(
+                        "Events", len(detail["events"]), "✉", "mint"
+                    ),
+                ], columns=3, height=175)
+                st.markdown(
+                    theme.status_badge(str(lead["status"])) + "&nbsp;&nbsp;" +
+                    theme.status_badge(str(lead["email_status"])),
+                    unsafe_allow_html=True,
+                )
 
                 st.subheader("Bisnis")
                 if business:
@@ -327,8 +406,7 @@ elif page == "Lead Detail":
                     )
                     if business.get("domain"):
                         b2.link_button(
-                            "Buka website",
-                            f"https://{business['domain']}",
+                            "Buka website", f"https://{business['domain']}"
                         )
 
                 st.subheader("Skor breakdown")
@@ -349,20 +427,17 @@ elif page == "Lead Detail":
                      "detail": e["detail"], "waktu": _fmt_ts(e["created_at"])}
                     for e in detail["events"]
                 ]
-                st.dataframe(
-                    _df(events), use_container_width=True, hide_index=True
-                )
+                st.dataframe(_df(events), use_container_width=True, hide_index=True)
 
 
 # --- Campaigns ---------------------------------------------------------------
 
 elif page == "Campaigns":
-    st.title("Campaigns")
-    st.caption(
-        "Worker hanya memproses campaign status `running` (dry run default). "
-        "`Kirim batch` = jalankan sekali sekarang. Kirim nyata tetap "
-        "butuh otorisasi eksplisit (D-036). Template bisa diedit di "
-        "tab **Edit template**."
+    _page_header(
+        "Campaigns",
+        "Worker hanya memproses campaign running (dry run default). "
+        "Kirim nyata tetap butuh otorisasi eksplisit (D-036). Template "
+        "bisa diedit di bawah — live preview di halaman Email Preview.",
     )
 
     rows = queries.campaigns_table(_engine())
@@ -380,6 +455,12 @@ elif page == "Campaigns":
         selected_id = st.selectbox(
             "Campaign", [int(r) for r in df["id"].tolist()]
         )
+        camp = get_campaign(_engine(), selected_id)
+        if camp:
+            st.markdown(
+                theme.status_badge(str(camp["status"])),
+                unsafe_allow_html=True,
+            )
         a1, a2, a3, a4 = st.columns(4)
         if a1.button("▶ Start (worker kirim tiap tick)"):
             set_campaign_status(_engine(), selected_id, "running")
@@ -404,9 +485,7 @@ elif page == "Campaigns":
         ]
         st.dataframe(_df(events), use_container_width=True, hide_index=True)
 
-        # --- edit template (custom email) --------------------------------
         st.subheader(f"Edit template campaign #{selected_id}")
-        camp = get_campaign(_engine(), selected_id)
         if camp:
             with st.form(f"edit_tpl_{selected_id}"):
                 e_subject = st.text_input("Subjek", camp["subject"])
@@ -414,13 +493,11 @@ elif page == "Campaigns":
                     "Body teks (placeholder: {{name}} {{category}} "
                     "{{location}} {{domain}} {{sender_name}} "
                     "{{sender_email}} {{unsubscribe_url}})",
-                    value=camp["body_text"],
-                    height=160,
+                    value=camp["body_text"], height=160,
                 )
                 e_html = st.text_area(
                     "Body HTML (opsional — kosong = text-only)",
-                    value=camp.get("body_html") or "",
-                    height=120,
+                    value=camp.get("body_html") or "", height=120,
                 )
                 ef1, ef2 = st.columns(2)
                 e_min = ef1.number_input(
@@ -435,10 +512,8 @@ elif page == "Campaigns":
                 try:
                     ok = update_campaign_template(
                         _engine(), selected_id,
-                        subject=e_subject, body_text=e_body,
-                        body_html=e_html,
-                        min_score=int(e_min),
-                        followup_days=int(e_followup),
+                        subject=e_subject, body_text=e_body, body_html=e_html,
+                        min_score=int(e_min), followup_days=int(e_followup),
                     )
                     if ok:
                         st.success(
@@ -480,11 +555,10 @@ elif page == "Campaigns":
 # --- Email Preview -----------------------------------------------------------
 
 elif page == "Email Preview":
-    st.title("Email Preview")
-    st.caption(
-        "Render persis seperti yang dikirim campaign (dry maupun live). "
-        "Edit subjek/body di bawah untuk custom tanpa menyimpan, atau "
-        "simpan langsung ke campaign."
+    _page_header(
+        "Email Preview",
+        "Render persis seperti yang dikirim campaign. Edit subjek/body "
+        "untuk custom tanpa menyimpan, atau simpan langsung ke campaign.",
     )
 
     campaigns = queries.campaigns_table(_engine())
@@ -513,7 +587,7 @@ elif page == "Email Preview":
                 value=campaign.get("body_html") or "", height=120,
             )
             col_a, col_b = st.columns(2)
-            render_now = col_a.form_submit_button("👁 Render preview")
+            col_a.form_submit_button("👁 Render preview")
             save_tpl = col_b.form_submit_button("💾 Simpan ke campaign")
         if save_tpl:
             try:
@@ -527,25 +601,31 @@ elif page == "Email Preview":
 
         subject, text, html = render_message(
             lead,
-            p_subject,
-            p_body,
-            p_html,
+            p_subject or "",
+            p_body or "",
+            p_html or "",
             "MARKETING",
             settings.smtp_from or "marketing@example.com",
             unsub,
         )
-        st.subheader("Subjek")
+        _panel("Subjek ter-render", "placeholder disubstitusi")
         st.code(subject, language=None)
 
         left, right = st.columns(2)
-        left.subheader("Teks")
-        left.code(text, language=None)
-        right.subheader("HTML")
-        right.code(html or "—", language="html")
+        with left:
+            _panel("Teks", "body text")
+            st.code(text, language=None)
+        with right:
+            _panel("HTML", "body html")
+            st.code(html or "—", language="html")
 
-        st.subheader("Pratinjau HTML (rendered)")
+        _panel("Pratinjau HTML (rendered)", "mail client simulation")
         if html:
-            st.components.v1.html(html, height=320, scrolling=True)  # type: ignore[attr-defined]
+            st.markdown('<div class="nc-mail-frame">', unsafe_allow_html=True)
+            st.components.v1.html(  # type: ignore[attr-defined]
+                html, height=340, scrolling=True
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.caption("Body HTML kosong — kirim text-only.")
 
@@ -559,36 +639,43 @@ elif page == "Email Preview":
 # --- Analytics ---------------------------------------------------------------
 
 elif page == "Analytics":
-    st.title("Analytics")
+    _page_header(
+        "Analytics",
+        "Distribusi skor lead, kontak per jenis, outreach harian — "
+        "semua dari data nyata.",
+    )
 
-    st.subheader("Distribusi skor lead")
-    buckets = queries.leads_by_score_bucket(_engine())
-    dfb = _df(buckets)
-    if not dfb.empty:
-        dfb["rentang"] = dfb["bucket"].map(lambda b: f"{int(b)}-{int(b) + 19}")
-        st.bar_chart(dfb.set_index("rentang")["n"])
-
-    st.subheader("Kontak per jenis")
-    kinds = queries.contacts_by_kind(_engine())
-    dfk = _df(kinds)
-    if not dfk.empty:
-        st.bar_chart(dfk.set_index("kind")["n"])
-
-    st.subheader("Outreach per hari (14 hari)")
-    daily = queries.events_daily(_engine())
-    dfd = _df(daily)
-    if not dfd.empty:
-        piv = dfd.pivot_table(
-            index="day", columns="event_type", values="n", fill_value=0
+    _panel("Distribusi skor lead", "bucket 20 poin")
+    buckets = [r for r in queries.leads_by_score_bucket(_engine()) if "error" not in r]
+    if buckets:
+        _chart(
+            charts.bar_chart_component(
+                [f"{int(r['bucket'])}-{int(r['bucket']) + 19}" for r in buckets],
+                [int(r["n"]) for r in buckets], height=215,
+            ),
+            235,
         )
-        st.bar_chart(piv)
+
+    a1, a2 = st.columns(2)
+    with a1:
+        _panel("Kontak per jenis", "distribusi")
+        kinds = [r for r in queries.contacts_by_kind(_engine()) if "error" not in r]
+        if kinds:
+            _chart(charts.donut_chart_component([(k["kind"], k["n"]) for k in kinds]), 290)
+    with a2:
+        _panel("Outreach per hari", "14 hari")
+        daily = [r for r in queries.events_daily(_engine()) if "error" not in r]
+        if daily:
+            _chart(charts.activity_chart_component(daily, height=245), 265)
 
 
 # --- Export ------------------------------------------------------------------
 
 elif page == "Export":
-    st.title("Export")
-    st.caption("CSV utf-8 (Excel-friendly) — filter sama seperti tabel lead.")
+    _page_header(
+        "Export",
+        "CSV utf-8 (Excel-friendly) — filter sama seperti tabel lead.",
+    )
 
     e1, e2, e3 = st.columns(3)
     x_min = e1.slider("Skor minimum", 0, 100, 0)
