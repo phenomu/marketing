@@ -169,7 +169,7 @@ marketing/
 │   └── logging_setup.py    # stdout + rotating file
 ├── dashboard/main.py        # Streamlit status page
 ├── scripts/                # sanity.py, init_db.py, heartbeat_check.py
-├── tests/                  # 46 unit test
+├── tests/                  # 236 test (unit + integration hermetic)
 ├── conftest.py
 ├── Dockerfile              # SATU image utk api/worker/scheduler/dashboard
 ├── docker-compose.yml      # dev: db default, app via profile
@@ -276,16 +276,24 @@ Endpoint API: `/` (info), `/health` (liveness), `/ready` (readiness — 503 kala
 - Docker compatibility wajib dijaga: semua service harus tetap bisa jalan native; satu image untuk semua service Python.
 - Bahasa dokumentasi: Indonesia; kode/identifier: Inggris.
 
-## 11. Hasil Test Nyata (2026-11-01)
+## 11. Hasil Test Nyata (2026-11-03)
 
 | Eksekusi | Hasil |
 |---|---|
-| Unit test native (venv 3.14, SQLite) | 12 passed |
-| Unit test dalam container (PG nyata, network compose) | 12 passed |
-| Hybrid: sanity native → PG container | db check = UP, schema 0.1 |
+| Full suite native (venv 3.14, SQLite hermetic) | 236 passed |
+| Full suite dalam container (PG nyata, network compose) | 236 passed |
+| Integration e2e (PHASE 8) | pipeline discovery→crawl→extract→validate→leads→campaign→unsubscribe, 43 test |
+| Live crawl retry pass | 8 failed + 2 stale requeue → 21 done, +14 kontak, leads 15→17 |
 | Full Docker: 5 service | api/worker/scheduler/dashboard/db semua (healthy) |
-| Volume shared: container worker tulis heartbeat | file `pid:1` muncul di `./logs` host |
 | Native uvicorn/worker/scheduler/streamlit | semua endpoint health 200 |
+
+### Hardening hasil QA (PHASE 8)
+
+- Field bisnis hasil scrape di-HTML-escape saat render body email (anti phishing/link injection).
+- CSV export menetralkan formula injection (`=`, `+`, `-`, `@` di awal field → quote-prefix).
+- Validasi email per-row guard: satu baris crash tidak lagi membunuh batch worker.
+- Endpoint unsubscribe mengembalikan 503 (bukan 500) saat DB down.
+- Crawl retry: `reset_failed_crawls` (dipakai via kode/worker) me-requeue job failed + stale.
 
 ## 12. Lisensi
 
