@@ -12,3 +12,4 @@ AGENTS.md
 logs/
 .pytest_cache/
 CONTEXT.md
+backups/
