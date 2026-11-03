@@ -155,7 +155,95 @@ def campaign_events(engine: Engine, campaign_id: int, limit: int = 200) -> list[
         return [{"error": str(exc)}]
 
 
+def businesses_table(
+    engine: Engine,
+    source: str = "any",
+    industry: str = "any",
+    search: str = "",
+    limit: int = 500,
+) -> list[dict]:
+    """Businesses browser for the KPI drill-down (source filter + name/
+    category/address search)."""
+    try:
+        stmt = select(
+            BUSINESSES.c.id,
+            BUSINESSES.c.name,
+            BUSINESSES.c.category,
+            BUSINESSES.c.phone,
+            BUSINESSES.c.domain,
+            BUSINESSES.c.address,
+            BUSINESSES.c.source,
+            BUSINESSES.c.rating,
+            BUSINESSES.c.review_count,
+            BUSINESSES.c.industry_match,
+        ).order_by(desc(BUSINESSES.c.id)).limit(limit)
+        if source != "any":
+            stmt = stmt.where(BUSINESSES.c.source == source)
+        if industry == "match":
+            stmt = stmt.where(BUSINESSES.c.industry_match.is_(True))
+        if search.strip():
+            like = f"%{search.strip()}%"
+            stmt = stmt.where(
+                BUSINESSES.c.name.ilike(like)
+                | BUSINESSES.c.category.ilike(like)
+                | BUSINESSES.c.address.ilike(like)
+            )
+        with engine.connect() as conn:
+            return _rows(conn, stmt)
+    except Exception as exc:  # noqa: BLE001
+        return [{"error": str(exc)}]
+
+
+def contacts_table(
+    engine: Engine,
+    kind: str = "any",
+    status: str = "any",
+    search: str = "",
+    limit: int = 500,
+) -> list[dict]:
+    """Contact browser for the KPI drill-down."""
+    try:
+        stmt = select(
+            CONTACTS.c.id,
+            CONTACTS.c.business_id,
+            CONTACTS.c.kind,
+            CONTACTS.c.value,
+            CONTACTS.c.status,
+            CONTACTS.c.confidence,
+            CONTACTS.c.source_kind,
+        ).order_by(desc(CONTACTS.c.id)).limit(limit)
+        if kind != "any":
+            stmt = stmt.where(CONTACTS.c.kind == kind)
+        if status != "any":
+            stmt = stmt.where(CONTACTS.c.status == status)
+        if search.strip():
+            like = f"%{search.strip()}%"
+            stmt = stmt.where(CONTACTS.c.value.ilike(like))
+        with engine.connect() as conn:
+            rows = _rows(conn, stmt)
+        if rows and "error" in rows[0]:
+            return rows
+        # join business names in one pass
+        ids = {r["business_id"] for r in rows if r.get("business_id")}
+        names: dict[int, str] = {}
+        if ids:
+            with engine.connect() as conn:
+                for r in _rows(
+                    conn,
+                    select(BUSINESSES.c.id, BUSINESSES.c.name).where(
+                        BUSINESSES.c.id.in_(tuple(ids))
+                    ),
+                ):
+                    names[r["id"]] = r["name"]
+        for r in rows:
+            r["business_name"] = names.get(r.get("business_id"), "")
+        return rows
+    except Exception as exc:  # noqa: BLE001
+        return [{"error": str(exc)}]
+
+
 def discovery_overview(engine: Engine) -> dict[str, Any]:
+
     """Discovery + crawl pipeline state for the Lead discovery page."""
     out: dict[str, Any] = {"jobs": [], "crawl_jobs": [], "error": ""}
     try:

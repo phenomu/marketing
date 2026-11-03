@@ -517,6 +517,17 @@ def kpi_grid_component(cards_html: list[str], columns: int = 4) -> str:
     font-size: 11.5px; color: #64748B;
     font-family: 'JetBrains Mono', monospace;
   }}
+  .nc-kpi.clickable {{ cursor: pointer; position: relative; }}
+  .nc-kpi.clickable::after {{
+    content: "→"; position: absolute; right: 14px; top: 14px;
+    color: #00E5FF; opacity: 0; font-size: 14px;
+    transition: opacity 180ms ease, transform 180ms ease;
+  }}
+  .nc-kpi.clickable:hover::after {{ opacity: 0.9; transform: translateX(2px); }}
+  .nc-kpi.clickable:hover {{
+    border-color: rgba(0,229,255,0.55);
+    box-shadow: 0 0 0 1px rgba(0,229,255,0.16), 0 8px 26px rgba(0,0,0,0.40);
+  }}
   @keyframes nc-fade-up {{
     from {{ opacity: 0; transform: translateY(10px); }}
     to {{ opacity: 1; transform: translateY(0); }}
@@ -548,19 +559,43 @@ def kpi_grid_component(cards_html: list[str], columns: int = 4) -> str:
     el.textContent = '0';
     requestAnimationFrame(step);
   }});
+  // KPI drill-down: clickable cards navigate the PARENT document
+  // (st.components.v1 iframes are same-origin with the Streamlit app,
+  // so direct parent.location access works; no postMessage bridge
+  // needed — a listener in a sibling iframe would never hear it).
+  document.querySelectorAll('.nc-kpi.clickable').forEach(function (card) {{
+    card.addEventListener('click', function () {{
+      var view = card.getAttribute('data-nc-href');
+      if (!view) {{ return; }}
+      try {{
+        var url = new URL(window.parent.location.href);
+        url.searchParams.set('view', view);
+        window.parent.location.href = url.toString();
+      }} catch (e) {{ /* cross-origin fallback — never fatal */ }}
+    }});
+  }});
 }})();
 </script>
 </body>
 </html>"""
 
 
-def kpi_card_countup(label: str, value: int, icon: str, tone: str = "cyan", sub: str = "", spark: list[int] | None = None, spark_color: str | None = None) -> str:
-    """Like theme.kpi_card but with count-up + sparkline (for the grid)."""
+def kpi_card_countup(label: str, value: int, icon: str, tone: str = "cyan", sub: str = "", spark: list[int] | None = None, spark_color: str | None = None, href: str = "") -> str:
+    """Like theme.kpi_card but with count-up + sparkline (for the grid).
+
+    href: when set, the card becomes a clickable navigation link (styled
+    as cursor/pointer, link set on cards via the parent page postMessage
+    is NOT used — Streamlit iframes are sandboxed; navigation is done by
+    the parent reading st.query_params and switching views instead).
+    The href is rendered as data-nc-href and the grid component posts a
+    message the parent page listens for."""
     spark_html = sparkline_svg(spark, spark_color) if spark else ""
     sub_html = f'<div class="sub">{sub}</div>' if sub else ""
     tone_class = f" {tone}" if tone in ("cyan", "purple", "mint") else ""
+    href_attr = f' data-nc-href="{href}"' if href else ""
+    clickable = " clickable" if href else ""
     return (
-        f'<div class="nc-card nc-kpi">'
+        f'<div class="nc-card nc-kpi{clickable}"{href_attr}>'
         f'<div class="ico{(" " + tone) if tone in ("purple", "mint") else ""}">{icon}</div>'
         f'<div class="label">{label}</div>'
         f'<div class="value{tone_class}" data-nc-count="{int(value)}">{int(value)}</div>'

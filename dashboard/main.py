@@ -162,6 +162,25 @@ def _chart(html_doc: str, height: int) -> None:
     )
 
 
+def _autorefresh(seconds: int = 10) -> None:
+    """Poll loop: rerun the page every `seconds` while the rendered
+    block stays active. Streamlit re-renders only on user interaction by
+    default, so background progress (worker ticks) would otherwise be
+    invisible until a manual refresh. Uses st_autorefresh when the
+    extra package is absent, falls back to a meta-refresh fragment."""
+    try:
+        import streamlit_autorefresh  # type: ignore[import-not-found]
+
+        streamlit_autorefresh.st_autorefresh(
+            interval=seconds * 1000, key=f"autorefresh-{seconds}"
+        )
+    except ImportError:
+        # no extra dependency: a tiny HTML meta-refresh would reload the
+        # WHOLE page (losing scroll) — instead show a hint and rely on
+        # the Refresh button. This branch is a graceful no-op.
+        pass
+
+
 def _panel(title: str, hint: str = "") -> None:
     st.markdown(theme.chart_panel(title, hint), unsafe_allow_html=True)
 
@@ -214,6 +233,16 @@ with st.sidebar:
 
 _topbar(page)
 
+# --- KPI drill-down (?view=bisnis|kontak|leads) -------------------------------
+# KPI cards on Overview link here; the target page (Lead Management)
+# carries the Bisnis/Kontak browser as tabs, so this only redirects.
+
+_view = st.query_params.get("view", "").strip()
+if _view in ("bisnis", "kontak", "leads"):
+    del st.query_params["view"]
+    if page != "Lead Management":
+        page = "Lead Management"
+
 
 # --- Overview ----------------------------------------------------------------
 
@@ -229,24 +258,29 @@ if page == "Overview":
 
     leads_total = sum(data["leads_by_status"].values())
     events_total = sum(data["events_by_type"].values())
-    _kpi_grid([
-        charts.kpi_card_countup(
-            "Bisnis", data["businesses"], "◈", "cyan",
-            sub=f"discovery done: {data['discovery_by_status'].get('done', 0)}",
-        ),
-        charts.kpi_card_countup(
-            "Kontak", sum(data["contacts_by_kind"].values()), "⌖", "purple",
-            sub=" · ".join(f"{k} {v}" for k, v in data["contacts_by_kind"].items()) or "—",
-        ),
-        charts.kpi_card_countup(
-            "Leads", leads_total, "◉", "cyan",
-            sub=" · ".join(f"{k} {v}" for k, v in data["leads_by_status"].items()) or "—",
-        ),
-        charts.kpi_card_countup(
-            "Outreach events", events_total, "✉", "mint",
-            sub=f"last: {data['last_event_at'] or '—'}",
-        ),
-    ], columns=4, height=205)
+    st.markdown(
+        theme.kpi_grid_links([
+            theme.kpi_card_link(
+                "Bisnis", data["businesses"], view="bisnis", icon="◈",
+                tone="cyan",
+                sub=f"discovery done: {data['discovery_by_status'].get('done', 0)}",
+            ),
+            theme.kpi_card_link(
+                "Kontak", sum(data["contacts_by_kind"].values()),
+                view="kontak", icon="⌖", tone="purple",
+                sub=" · ".join(f"{k} {v}" for k, v in data["contacts_by_kind"].items()) or "—",
+            ),
+            theme.kpi_card_link(
+                "Leads", leads_total, view="leads", icon="◉", tone="cyan",
+                sub=" · ".join(f"{k} {v}" for k, v in data["leads_by_status"].items()) or "—",
+            ),
+            theme.kpi_card(
+                "Outreach events", events_total, icon="✉", tone="mint",
+                sub=f"last: {data['last_event_at'] or '—'}",
+            ),
+        ]),
+        unsafe_allow_html=True,
+    )
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
@@ -340,6 +374,19 @@ elif page == "Lead Discovery":
         ["Discovery jobs", "Crawl jobs", "Tambah job"]
     )
     with tab_jobs:
+        # auto-poll while a job is pending: the worker processes jobs
+        # every ~30s, and Streamlit only re-renders on interaction —
+        # without this, a freshly enqueued job stays invisible until a
+        # manual page refresh.
+        pending = sum(1 for j in disc["jobs"] if j["status"] == "pending")
+        if pending:
+            st.info(
+                f"⏳ {pending} job pending — worker memproses tiap ±30s. "
+                "Tabel refresh otomatis tiap 10s."
+            )
+            _autorefresh(10)
+        r1, r2 = st.columns([4, 1])
+        r2.button("🔄 Refresh", help="Muat ulang tabel job sekarang")
         rows = [
             {
                 "id": j["id"], "source": j["source"], "query": j["query"],
@@ -373,7 +420,14 @@ elif page == "Lead Discovery":
                         _engine(), source, query.strip(),
                         location.strip(), int(max_results)
                     )
-                    st.success(f"Job #{job_id} pending — worker proses tick berikutnya.")
+                    st.success(
+                        f"Job #{job_id} pending — worker proses tick "
+                        "berikutnya."
+                    )
+                    # rerun immediately so the Discovery-jobs tab shows
+                    # the new pending row without a manual page refresh
+                    # (form submissions re-render only the form block)
+                    st.rerun()
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"Gagal: {exc}")
 
@@ -383,42 +437,94 @@ elif page == "Lead Discovery":
 elif page == "Lead Management":
     _page_header(
         "Lead Management",
-        "Tabel lead dengan filter skor/status — sumber data sama dengan "
-        "export CSV (list_leads).",
+        "Tabel lead (dengan filter) + browser bisnis & kontak — semua "
+        "baris database.",
     )
 
-    with st.expander("Filter", expanded=True):
-        f1, f2, f3 = st.columns(3)
-        min_score = f1.slider("Skor minimum", 0, 100, 0)
-        email_status = f2.selectbox(
-            "Status email", ["any", "valid", "unknown", "invalid", "unchecked"]
-        )
-        lead_status = f3.selectbox(
-            "Status lead", ["any", "new", "contacted", "suppressed", "bounced"],
-        )
+    tab_leads, tab_bisnis, tab_kontak = st.tabs(
+        ["Leads", "Bisnis", "Kontak"]
+    )
+    with tab_leads:
+        with st.expander("Filter", expanded=True):
+            f1, f2, f3 = st.columns(3)
+            min_score = f1.slider("Skor minimum", 0, 100, 0)
+            email_status = f2.selectbox(
+                "Status email", ["any", "valid", "unknown", "invalid", "unchecked"]
+            )
+            lead_status = f3.selectbox(
+                "Status lead", ["any", "new", "contacted", "suppressed", "bounced"],
+            )
 
-    rows = queries.leads_table(
-        _engine(), min_score=min_score, email_status=email_status,
-        lead_status=lead_status, limit=500,
-    )
-    df = _df(rows)
-    if not df.empty:
-        df = df[[
-            "id", "name", "best_email", "email_status", "score", "status",
-            "category", "domain", "best_phone",
-        ]]
-    c_count, c_dl = st.columns([3, 1])
-    c_count.caption(f"{len(df)} lead")
-    c_dl.download_button(
-        "⬇ Download CSV",
-        data=leads_csv_bytes(
-            _engine(), min_score=min_score, email_status=email_status, limit=500
-        ),
-        file_name="leads.csv",
-        mime="text/csv",
-        disabled=df.empty,
-    )
-    st.dataframe(df, use_container_width=True, hide_index=True)
+        rows = queries.leads_table(
+            _engine(), min_score=min_score, email_status=email_status,
+            lead_status=lead_status, limit=500,
+        )
+        df = _df(rows)
+        if not df.empty:
+            df = df[[
+                "id", "name", "best_email", "email_status", "score", "status",
+                "category", "domain", "best_phone",
+            ]]
+        c_count, c_dl = st.columns([3, 1])
+        c_count.caption(f"{len(df)} lead")
+        c_dl.download_button(
+            "⬇ Download CSV",
+            data=leads_csv_bytes(
+                _engine(), min_score=min_score, email_status=email_status, limit=500
+            ),
+            file_name="leads.csv",
+            mime="text/csv",
+            disabled=df.empty,
+            key="dl_leads_tab",
+        )
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+    with tab_bisnis:
+        b1, b2, b3 = st.columns([2, 2, 3])
+        src = b1.selectbox(
+            "Source", ["any", "gmaps_scrape", "serpapi", "google_places"],
+            key="biz_src",
+        )
+        ind = b2.selectbox("Industry", ["any", "match"], key="biz_ind")
+        q = b3.text_input("Cari nama/kategori/alamat", "", key="biz_q")
+        brows = queries.businesses_table(
+            _engine(), source=src, industry=ind, search=q, limit=1000
+        )
+        bdf = _df(brows)
+        if not bdf.empty:
+            bdf = bdf.rename(columns={
+                "id": "ID", "name": "Nama", "category": "Kategori",
+                "phone": "Telepon", "domain": "Domain", "address": "Alamat",
+                "source": "Source", "rating": "Rating",
+                "review_count": "Review", "industry_match": "Target",
+            })
+        st.caption(f"{len(bdf)} bisnis")
+        st.dataframe(bdf, use_container_width=True, hide_index=True)
+
+    with tab_kontak:
+        k1, k2, k3 = st.columns([2, 2, 3])
+        kind = k1.selectbox(
+            "Jenis", ["any", "email", "phone", "social", "address"],
+            key="kon_kind",
+        )
+        status = k2.selectbox(
+            "Status", ["any", "valid", "unknown", "invalid", "pending"],
+            key="kon_status",
+        )
+        kq = k3.text_input("Cari nilai kontak", "", key="kon_q")
+        krows = queries.contacts_table(
+            _engine(), kind=kind, status=status, search=kq, limit=1000
+        )
+        kdf = _df(krows)
+        if not kdf.empty:
+            kdf = kdf.rename(columns={
+                "id": "ID", "business_id": "Bisnis ID",
+                "business_name": "Bisnis", "kind": "Jenis",
+                "value": "Nilai", "status": "Status",
+                "confidence": "Conf", "source_kind": "Sumber",
+            })
+        st.caption(f"{len(kdf)} kontak")
+        st.dataframe(kdf, use_container_width=True, hide_index=True)
 
 
 # --- Lead Detail -------------------------------------------------------------

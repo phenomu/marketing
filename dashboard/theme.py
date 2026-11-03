@@ -317,6 +317,33 @@ section[data-testid="stSidebar"] label[data-testid="stRadioOption"] > div:first-
 .nc-kpi .value.mint {{ color: var(--nc-mint); }}
 .nc-kpi .sub {{ font-size: 11.5px; color: var(--nc-text-3); font-family: var(--nc-font-mono); }}
 
+/* KPI grid rendered directly in the parent DOM (anchor cards) */
+.nc-kpi-grid {{
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 0 8px 0;
+}}
+@media (max-width: 1100px) and (min-width: 721px) {{
+  .nc-kpi-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+}}
+@media (max-width: 720px) {{
+  .nc-kpi-grid {{ grid-template-columns: 1fr; }}
+}}
+.nc-kpi-grid a.nc-card {{
+  text-decoration: none; color: inherit; display: block;
+  position: relative;
+}}
+.nc-kpi-grid a.nc-card::after {{
+  content: "→"; position: absolute; right: 14px; top: 14px;
+  color: var(--nc-cyan); opacity: 0; font-size: 14px;
+  transition: opacity 180ms ease, transform 180ms ease;
+}}
+.nc-kpi-grid a.nc-card:hover::after {{ opacity: 0.9; transform: translateX(2px); }}
+.nc-kpi-grid a.nc-card:hover {{
+  border-color: rgba(0,229,255,0.55);
+  box-shadow: 0 0 0 1px rgba(0,229,255,0.16), 0 8px 26px rgba(0,0,0,0.40);
+}}
+
 /* ---- badges ------------------------------------------------------------------ */
 
 .nc-badge {{
@@ -644,6 +671,34 @@ def kpi_card(
         f"{sub_html}"
         f"</div>"
     )
+
+
+def kpi_card_link(
+    label: str,
+    value: Any,
+    view: str,
+    icon: str = "◈",
+    tone: str = "cyan",
+    sub: str = "",
+) -> str:
+    """Clickable KPI card: whole card is an anchor to ?view=<view>.
+    Rendered in the PARENT document (st.markdown), so a plain link
+    works — component iframes are sandboxed and cannot navigate."""
+    value_class = f" {esc(tone)}" if tone in ("cyan", "purple", "mint") else ""
+    sub_html = f'<div class="sub">{esc(sub)}</div>' if sub else ""
+    return (
+        f'<a class="nc-card nc-kpi" href="?view={esc(view)}">'
+        f'<div class="ico{(" " + esc(tone)) if tone in ("purple", "mint") else ""}">{esc(icon)}</div>'
+        f'<div class="label">{esc(label)}</div>'
+        f'<div class="value{value_class}">{esc(value)}</div>'
+        f"{sub_html}"
+        f"</a>"
+    )
+
+
+def kpi_grid_links(cards_html: list[str]) -> str:
+    """Responsive grid of clickable KPI cards (parent-DOM version)."""
+    return f'<div class="nc-kpi-grid">{"".join(cards_html)}</div>'
 
 
 def topbar(page: str, badges_html: list[str]) -> str:
