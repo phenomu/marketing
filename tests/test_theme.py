@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from dashboard import charts, theme
+from dashboard import charts, docs, theme
 
 
 class TestTokens:
@@ -196,3 +196,42 @@ class TestEchartsBundle:
                 charts._echarts_js()
         finally:
             charts._ECHARTS_PATH = original
+
+
+class TestDocsReader:
+    def test_split_sections_basic(self):
+        md = "# Title\nintro\n## Alpha\nbody a\n## Beta\nbody b"
+        secs = docs.split_sections(md)
+        assert secs == [("Alpha", "body a"), ("Beta", "body b")]
+
+    def test_split_sections_empty(self):
+        assert docs.split_sections("") == []
+        assert docs.split_sections("no headings") == []
+
+    def test_split_sections_drops_preamble(self):
+        md = "preamble junk\n## One\nx"
+        assert docs.split_sections(md) == [("One", "x")]
+
+    def test_guide_exists_and_sections(self):
+        md = docs.load_guide()
+        assert len(md) > 2000
+        titles = [t for t, _ in docs.split_sections(md)]
+        assert len(titles) == 10
+
+    def test_build_groups_covers_all_guide_sections(self):
+        md = docs.load_guide()
+        grouped = {n for g in docs.DOC_GROUPS for n in g[1]}
+        titles = {t for t, _ in docs.split_sections(md)}
+        # every guide section must be reachable from a docs tab
+        missing = titles - grouped
+        assert not missing, f"sections missing from docs tabs: {missing}"
+
+    def test_missing_file_never_raises(self):
+        assert docs.load_guide("/nonexistent/guide.md") == ""
+
+    def test_guide_is_feature_usage_not_readme(self):
+        # the guide documents how to USE features (verbs, page names)
+        md = docs.load_guide()
+        for needle in ("Memulai", "Tambah job", "Enqueue job", "DRY RUN",
+                       "placeholder", "unsubscri"):
+            assert needle.lower() in md.lower(), f"guide missing usage doc: {needle}"

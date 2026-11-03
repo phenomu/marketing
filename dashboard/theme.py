@@ -213,6 +213,8 @@ section[data-testid="stSidebar"] hr {{ border-color: rgba(148,163,184,0.12); }}
 section[data-testid="stSidebar"] [role="radiogroup"] {{ gap: 2px; }}
 section[data-testid="stSidebar"] label[data-testid="stRadioOption"] {{
   display: block;
+  width: 100%;
+  box-sizing: border-box;
   padding: 9px 10px;
   margin: 1px 0;
   border-radius: {RADII['md']};
@@ -235,6 +237,17 @@ section[data-testid="stSidebar"] label[data-testid="stRadioOption"] span {{ font
 /* the native circle indicator — keep the layout row, drop the dot */
 section[data-testid="stSidebar"] label[data-testid="stRadioOption"] > div:first-of-type > div:first-child {{
   display: none !important;
+}}
+/* full-width clickable row: every wrapper up the chain must fill */
+section[data-testid="stSidebar"] [data-testid="stElementContainer"],
+section[data-testid="stSidebar"] [data-testid="stRadio"],
+section[data-testid="stSidebar"] [data-testid="stRadioGroup"],
+section[data-testid="stSidebar"] [data-testid="stRadioGroup"] > div {{
+  width: 100% !important;
+  max-width: 100% !important;
+}}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"] > div:first-of-type {{
+  width: 100%;
 }}
 
 /* sidebar collapse arrow */
@@ -493,6 +506,74 @@ pre, code, [data-testid="stCodeBlock"] {{
   padding: 10px;
 }}
 
+/* ---- docs page -------------------------------------------------------------------- */
+
+.nc-docs-note {{
+  margin: 0 0 16px 0; padding: 10px 14px;
+  background: rgba(16,25,42,0.70);
+  border: 1px solid rgba(0,229,255,0.20);
+  border-left: 3px solid var(--nc-cyan);
+  border-radius: {RADII['md']};
+  font-family: var(--nc-font-mono); font-size: 11.5px;
+  color: var(--nc-text-2); letter-spacing: 0.02em;
+}}
+.nc-docs-note::before {{
+  content: "▤ ";
+  color: var(--nc-cyan);
+}}
+
+/* markdown prose (README render) */
+[data-testid="stMarkdownContainer"] h2 {{
+  font-family: var(--nc-font-head); font-size: 21px; font-weight: 700;
+  color: var(--nc-text); margin-top: 26px; margin-bottom: 10px;
+  padding-bottom: 6px; border-bottom: 1px solid rgba(148,163,184,0.14);
+}}
+[data-testid="stMarkdownContainer"] h2:first-child {{ margin-top: 6px; }}
+[data-testid="stMarkdownContainer"] h3 {{
+  font-family: var(--nc-font-head); font-size: 16px; font-weight: 600;
+  color: var(--nc-text-2); margin-top: 20px;
+}}
+[data-testid="stMarkdownContainer"] a {{
+  color: var(--nc-cyan); text-decoration: none;
+  border-bottom: 1px dashed rgba(0,229,255,0.35);
+}}
+[data-testid="stMarkdownContainer"] a:hover {{
+  color: var(--nc-mint); border-bottom-color: var(--nc-mint);
+}}
+[data-testid="stMarkdownContainer"] table {{
+  border-collapse: collapse; width: 100%; margin: 12px 0;
+  font-size: 13px;
+}}
+[data-testid="stMarkdownContainer"] th {{
+  background: rgba(23,34,56,0.85); color: var(--nc-text);
+  font-family: var(--nc-font-head); font-size: 12.5px; font-weight: 600;
+  text-align: left; padding: 8px 12px;
+  border: 1px solid rgba(148,163,184,0.16);
+}}
+[data-testid="stMarkdownContainer"] td {{
+  padding: 7px 12px; color: var(--nc-text-2);
+  border: 1px solid rgba(148,163,184,0.12);
+  background: rgba(16,25,42,0.45);
+}}
+[data-testid="stMarkdownContainer"] tr:hover td {{
+  background: rgba(0,229,255,0.05);
+}}
+[data-testid="stMarkdownContainer"] code {{
+  background: rgba(7,11,20,0.90); color: var(--nc-mint);
+  font-family: var(--nc-font-mono); font-size: 12px;
+  padding: 1.5px 6px; border-radius: 5px;
+  border: 1px solid rgba(148,163,184,0.10);
+}}
+[data-testid="stMarkdownContainer"] hr {{
+  border: none; height: 1px; margin: 22px 0;
+  background: linear-gradient(90deg, rgba(0,229,255,0.25), rgba(139,92,246,0.20), transparent);
+}}
+[data-testid="stMarkdownContainer"] blockquote {{
+  border-left: 3px solid rgba(0,229,255,0.40);
+  background: rgba(0,229,255,0.04); color: var(--nc-text-2);
+  margin: 12px 0; padding: 8px 14px; border-radius: 0 {RADII['sm']} {RADII['sm']} 0;
+}}
+
 /* ---- animations --------------------------------------------------------------- */
 
 @keyframes nc-fade-in {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
@@ -607,3 +688,8 @@ def side_status(rows: list[tuple[str, str]]) -> str:
         for k, v in rows
     )
     return f'<div class="nc-side-status">{lines}</div>'
+
+
+def docs_note(text: str) -> str:
+    """Docs page source banner (rendered above the tabs)."""
+    return f'<div class="nc-docs-note">{esc(text)}</div>'

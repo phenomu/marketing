@@ -32,6 +32,7 @@ import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from dashboard import charts  # noqa: E402
+from dashboard import docs  # noqa: E402
 from dashboard import queries  # noqa: E402
 from dashboard import theme  # noqa: E402
 from app.export import leads_csv_bytes  # noqa: E402
@@ -65,6 +66,7 @@ PAGES = [
     "Email Preview",
     "Analytics",
     "Export",
+    "Dokumentasi",
 ]
 
 PAGE_ICONS = {
@@ -76,6 +78,7 @@ PAGE_ICONS = {
     "Email Preview": "◫",
     "Analytics": "▲",
     "Export": "⇩",
+    "Dokumentasi": "▤",
 }
 
 
@@ -722,3 +725,37 @@ elif page == "Export":
     n_rows = len(list(csv.reader(StringIO(payload.decode("utf-8-sig"))))) - 1
     st.caption(f"{n_rows} baris")
     st.dataframe(_csv_rows(payload), use_container_width=True, hide_index=True)
+
+
+# --- Dokumentasi --------------------------------------------------------------
+
+elif page == "Dokumentasi":
+    _page_header(
+        "Dokumentasi",
+        "Panduan penggunaan semua fitur MARKETING — dari discovery lead "
+        "sampai kirim campaign, mode aman, CLI, dan troubleshooting.",
+    )
+
+    md = docs.load_guide()
+    if not md:
+        st.info(
+            "docs_guide.md tidak ditemukan — dokumentasi hanya tersedia "
+            "saat menjalankan dari repo/image lengkap."
+        )
+    else:
+        groups = docs.build_groups(md)
+        if not groups:
+            st.warning("docs_guide.md kosong / tidak punya section.")
+        else:
+            st.markdown(
+                theme.docs_note(
+                    "Sumber: dashboard/docs_guide.md (panduan operator) · "
+                    "render markdown aman — HTML di-sanitize Streamlit"
+                ),
+                unsafe_allow_html=True,
+            )
+            labels = [f"{docs.GROUP_ICONS.get(g, '▤')}   {g}" for g, _ in groups]
+            tabs = st.tabs(labels)
+            for tab, (group, body) in zip(tabs, groups):
+                with tab:
+                    st.markdown(body)
