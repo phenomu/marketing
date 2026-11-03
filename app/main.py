@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 import app
-from app.db import check_db
+from app.db import check_db, get_engine
 from config import settings
 from config.logging_setup import setup_logging
 
@@ -59,3 +59,44 @@ def ready():
             status_code=503, content={"status": "not-ready", "database": "down"}
         )
     return {"status": "ready", "database": "up", "version": app.__version__}
+
+
+# --- PHASE 6: one-click unsubscribe (public, unauthenticated by design) -----
+
+
+@api.get("/unsubscribe")
+def unsubscribe_get(token: str):
+    """Landing page for the one-click unsubscribe link (no confirm click
+    needed — one click, done; RFC 8058-style single-request opt-down)."""
+    from app.outreach.bounce import process_unsubscribe_token
+
+    email = process_unsubscribe_token(get_engine(), token)
+    if email is None:
+        return JSONResponse(
+            status_code=404, content={"status": "invalid or expired token"}
+        )
+    return JSONResponse(
+        content={"status": "unsubscribed", "email": _mask_email(email)}
+    )
+
+
+@api.post("/unsubscribe")
+def unsubscribe_post(token: str):
+    """RFC 8058 one-click POST variant for mail clients that support it."""
+    from app.outreach.bounce import process_unsubscribe_token
+
+    email = process_unsubscribe_token(get_engine(), token)
+    if email is None:
+        return JSONResponse(status_code=404, content={"status": "invalid token"})
+    return JSONResponse(
+        content={"status": "unsubscribed", "email": _mask_email(email)}
+    )
+
+
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    if len(local) <= 2:
+        masked = local[0] + "*"
+    else:
+        masked = local[0] + "*" * (len(local) - 2) + local[-1]
+    return f"{masked}@{domain}"
