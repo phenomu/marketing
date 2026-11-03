@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import logging
 from pathlib import Path
 
@@ -38,6 +39,29 @@ COLUMNS = [
 ]
 
 
+def _write_leads_csv(rows: list[dict], fh) -> None:
+    writer = csv.DictWriter(fh, fieldnames=COLUMNS, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(
+            {
+                "score": row["score"],
+                "name": row["name"],
+                "best_email": row["best_email"],
+                "email_status": row["email_status"],
+                "best_phone": row["best_phone"],
+                "category": row["category"],
+                "address": row["address"],
+                "domain": row["domain"],
+                "lead_status": row["status"],
+                "score_detail": row["score_detail"],
+                "updated_at": row["updated_at"].isoformat()
+                if row["updated_at"]
+                else "",
+            }
+        )
+
+
 def export_leads_csv(
     engine: Engine,
     path: str | Path,
@@ -53,28 +77,25 @@ def export_leads_csv(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-        writer = csv.DictWriter(fh, fieldnames=COLUMNS, extrasaction="ignore")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(
-                {
-                    "score": row["score"],
-                    "name": row["name"],
-                    "best_email": row["best_email"],
-                    "email_status": row["email_status"],
-                    "best_phone": row["best_phone"],
-                    "category": row["category"],
-                    "address": row["address"],
-                    "domain": row["domain"],
-                    "lead_status": row["status"],
-                    "score_detail": row["score_detail"],
-                    "updated_at": row["updated_at"].isoformat()
-                    if row["updated_at"]
-                    else "",
-                }
-            )
+        _write_leads_csv(rows, fh)
     log.info("exported %s lead(s) to %s", len(rows), path)
     return {"rows": len(rows), "path": str(path)}
+
+
+def leads_csv_bytes(
+    engine: Engine,
+    min_score: int = 0,
+    email_status: str | None = None,
+    limit: int = 500,
+) -> bytes:
+    """Same CSV stream, in memory — used by the dashboard download button."""
+    rows = list_leads(
+        engine, limit=limit, min_score=min_score,
+        email_status=None if email_status in (None, "any") else email_status,
+    )
+    buf = io.StringIO()
+    _write_leads_csv(rows, buf)
+    return buf.getvalue().encode("utf-8-sig")
 
 
 def main(argv: list[str] | None = None) -> int:
