@@ -32,7 +32,7 @@ from config import settings
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "0.5"
+SCHEMA_VERSION = "0.6"
 
 METADATA = MetaData()
 
@@ -147,10 +147,57 @@ LEADS = Table(
     Column("best_phone", Text, default=""),
     Column("email_status", String(16), default="unknown"),  # status of best_email
     Column("score", Integer, default=0),  # 0-100 PHASE 5 heuristic
-    Column("status", String(16), default="new", nullable=False),  # new|queued|contacted|suppressed (PHASE 6 uses)
+    Column("status", String(16), default="new", nullable=False),  # new|queued|contacted|suppressed|bounced
     Column("score_detail", String(512), default=""),  # score breakdown
     Column("created_at", DateTime, default=_utcnow),
     Column("updated_at", DateTime, default=_utcnow, onupdate=_utcnow),
+)
+
+
+CAMPAIGNS = Table(
+    "campaigns",
+    METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("name", String(128), nullable=False, unique=True),
+    Column("subject", String(255), nullable=False),
+    Column("body_html", Text, nullable=False, default=""),
+    Column("body_text", Text, nullable=False, default=""),
+    Column("followup_subject", String(255), default=""),
+    Column("followup_body_html", Text, default=""),
+    Column("followup_body_text", Text, default=""),
+    Column("followup_days", Integer, default=0),  # 0 = follow-up disabled
+    Column("min_score", Integer, default=0),
+    Column("email_statuses", String(64), default="valid,unknown"),  # CSV filter on leads.email_status
+    Column("status", String(16), default="draft", nullable=False),  # draft|running|paused|done
+    Column("created_at", DateTime, default=_utcnow),
+    Column("updated_at", DateTime, default=_utcnow, onupdate=_utcnow),
+)
+
+
+OUTREACH_EVENTS = Table(
+    "outreach_events",
+    METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("campaign_id", Integer, ForeignKey("campaigns.id"), nullable=False, index=True),
+    Column("lead_id", Integer, ForeignKey("leads.id"), nullable=False, index=True),
+    Column("email", String(320), nullable=False),
+    Column("event_type", String(16), nullable=False),  # sent|sent-dry|followup|followup-dry|failed
+    Column("detail", String(512), default=""),
+    Column("created_at", DateTime, default=_utcnow),
+    # duplicate-send prevention: one primary send and one follow-up per
+    # (campaign, lead) regardless of dry/live mode
+    UniqueConstraint("campaign_id", "lead_id", "event_type", name="uq_outreach_clt"),
+)
+
+
+SUPPRESSIONS = Table(
+    "suppressions",
+    METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("email_norm", String(320), nullable=False, unique=True, index=True),
+    Column("reason", String(128), nullable=False),  # unsubscribe|hard-bounce|manual
+    Column("source", String(64), default=""),
+    Column("created_at", DateTime, default=_utcnow),
 )
 
 
@@ -227,6 +274,10 @@ _MIGRATIONS: dict[str, tuple[str, ...]] = {
         "ALTER TABLE contacts ADD COLUMN status_detail TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE contacts ADD COLUMN checked_at TIMESTAMP",
         # leads table is created by create_all (new table — no ALTER needed)
+    ),
+    "0.5": (
+        # campaigns / outreach_events / suppressions are new tables —
+        # created by create_all; this migration only bumps the stamp.
     ),
 }
 
