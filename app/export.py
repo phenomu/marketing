@@ -39,6 +39,19 @@ COLUMNS = [
 ]
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value) -> object:
+    """Neutralize CSV formula injection: a scraped field like
+    `=HYPERLINK(...)` or `=cmd|...` would execute when the operator
+    opens the export in Excel/Sheets. Leading formula characters get a
+    text-guard quote prefix."""
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return f"'{value}"
+    return value
+
+
 def _write_leads_csv(rows: list[dict], fh) -> None:
     writer = csv.DictWriter(fh, fieldnames=COLUMNS, extrasaction="ignore")
     writer.writeheader()
@@ -46,15 +59,15 @@ def _write_leads_csv(rows: list[dict], fh) -> None:
         writer.writerow(
             {
                 "score": row["score"],
-                "name": row["name"],
-                "best_email": row["best_email"],
-                "email_status": row["email_status"],
-                "best_phone": row["best_phone"],
-                "category": row["category"],
-                "address": row["address"],
-                "domain": row["domain"],
-                "lead_status": row["status"],
-                "score_detail": row["score_detail"],
+                "name": _csv_safe(row["name"]),
+                "best_email": _csv_safe(row["best_email"]),
+                "email_status": _csv_safe(row["email_status"]),
+                "best_phone": _csv_safe(row["best_phone"]),
+                "category": _csv_safe(row["category"]),
+                "address": _csv_safe(row["address"]),
+                "domain": _csv_safe(row["domain"]),
+                "lead_status": _csv_safe(row["status"]),
+                "score_detail": _csv_safe(row["score_detail"]),
                 "updated_at": row["updated_at"].isoformat()
                 if row["updated_at"]
                 else "",
