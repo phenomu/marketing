@@ -53,6 +53,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-marketing}
       POSTGRES_HOST: db # service-network name; native uses 127.0.0.1 from .env
       POSTGRES_PORT: 5432
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}   # empty = auth off (localhost only)
+      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET:-}
+      UNSUBSCRIBE_BASE_URL: ${UNSUBSCRIBE_BASE_URL:-http://127.0.0.1:8000}
       WORKER_INTERVAL_S: ${WORKER_INTERVAL_S:-30}
       SCHEDULER_INTERVAL_S: ${SCHEDULER_INTERVAL_S:-60}
       SMTP_HOST: ${SMTP_HOST:-}

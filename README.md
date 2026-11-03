@@ -253,11 +253,22 @@ Semua via environment variable, tidak ada secret hardcode. Daftar lengkap di `.e
 python scripts/sanity.py                       # cek settings + DB (native/container)
 python scripts/init_db.py                      # schema init/migrasi
 python scripts/heartbeat_check.py worker       # healthcheck manual service non-HTTP
+python scripts/health_monitor.py               # monitor semua service (exit 0/1, --json)
+python scripts/backup_db.py backup             # backup DB (restore/verify ada juga)
 python -m streamlit run dashboard/main.py       # dashboard native
 docker compose --profile dashboard up -d       # dashboard container → 127.0.0.1:8501
 ```
 
-Endpoint API: `/` (info), `/health` (liveness), `/ready` (readiness — 503 kalau DB down), `/docs` (Swagger). Perintah scrape/ekstraksi/outreach menyusul fase implementasinya.
+Endpoint API: `/` (info), `/health` (liveness), `/ready` (readiness — 503 kalau DB down), `/unsubscribe` (RFC 8058, publik by design), `/docs` (Swagger, dev only). Saat `API_AUTH_TOKEN` di-set, semua endpoint lain butuh header `X-Auth-Token` (atau `Bearer`); dashboard butuh `?token=…` sekali di awal.
+
+## 8b. Production (PHASE 9)
+
+- Deployment lengkap (server, reverse proxy + TLS, cron, update, rollback): `docs/DEPLOYMENT.md`
+- Review kepatuhan outreach (unsubscribe, suppression, header, rate): `docs/COMPLIANCE.md`
+- Checklist gate rilis: `docs/RELEASE_CHECKLIST.md`
+- Template env produksi: `.env.prod.example`
+- Backup/restore: `python scripts/backup_db.py backup|verify|restore` — restore wajib `--confirm-my-data`, single-transaction
+- Monitoring: `python scripts/health_monitor.py` — 7 cek (api, ready, dashboard, db, heartbeat worker/scheduler, disk), exit 1 = alert
 
 ## 9. Kepatuhan & Penggunaan yang Bertanggung Jawab
 
