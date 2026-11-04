@@ -156,6 +156,18 @@ def _df(rows: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+_ROW_OPTIONS = [500, 1000, "Semua"]
+
+
+def _window_caption(shown: int, total: int | None, noun: str) -> str:
+    """Caption format 'Menampilkan N dari TOTAL noun (diurutkan terbaru)' —
+    total=None (count query failed) falls back to the shown count."""
+    return (
+        f"Menampilkan {shown} dari {total if total is not None else shown}"
+        f" {noun} (diurutkan terbaru)"
+    )
+
+
 def _fmt_ts(value) -> str:
     return value.isoformat(sep=" ", timespec="minutes") if value else ""
 
@@ -469,7 +481,7 @@ elif page == "Lead Management":
     )
     with tab_leads:
         with st.expander("Filter", expanded=True):
-            f1, f2, f3 = st.columns(3)
+            f1, f2, f3, f4 = st.columns([2, 2, 2, 2])
             min_score = f1.slider("Skor minimum", 0, 100, 0)
             email_status = f2.selectbox(
                 "Status email", ["any", "valid", "unknown", "invalid", "unchecked"]
@@ -477,10 +489,14 @@ elif page == "Lead Management":
             lead_status = f3.selectbox(
                 "Status lead", ["any", "new", "contacted", "suppressed", "bounced"],
             )
+            llim = f4.selectbox(
+                "Tampilkan", [500, 1000, "Semua"], index=1, key="lead_rows"
+            )
+            _limit = None if llim == "Semua" else int(llim)
 
         rows = queries.leads_table(
             _engine(), min_score=min_score, email_status=email_status,
-            lead_status=lead_status, limit=500,
+            lead_status=lead_status, limit=_limit,
         )
         df = _df(rows)
         if not df.empty:
@@ -490,13 +506,15 @@ elif page == "Lead Management":
             ]]
         c_count, c_dl = st.columns([3, 1])
         c_count.caption(
-            f"Menampilkan {len(df)} dari {queries.table_count(_engine(), 'leads') or len(df)}"
-            " lead (diurutkan terbaru)"
+            _window_caption(
+                len(df), queries.table_count(_engine(), "leads"), "lead"
+            )
         )
         c_dl.download_button(
             "⬇ Download CSV",
             data=leads_csv_bytes(
-                _engine(), min_score=min_score, email_status=email_status, limit=500
+                _engine(), min_score=min_score, email_status=email_status,
+                limit=_limit,
             ),
             file_name="leads.csv",
             mime="text/csv",
@@ -506,15 +524,19 @@ elif page == "Lead Management":
         st.dataframe(df, use_container_width=True, hide_index=True)
 
     with tab_bisnis:
-        b1, b2, b3 = st.columns([2, 2, 3])
+        b1, b2, b3, b4 = st.columns([2, 2, 3, 2])
         src = b1.selectbox(
             "Source", ["any", "gmaps_scrape", "serpapi", "google_places"],
             key="biz_src",
         )
         ind = b2.selectbox("Industry", ["any", "match"], key="biz_ind")
         q = b3.text_input("Cari nama/kategori/alamat", "", key="biz_q")
+        blim = b4.selectbox(
+            "Tampilkan", [500, 1000, "Semua"], index=1, key="biz_rows"
+        )
         brows = queries.businesses_table(
-            _engine(), source=src, industry=ind, search=q, limit=1000
+            _engine(), source=src, industry=ind, search=q,
+            limit=None if blim == "Semua" else int(blim)
         )
         bdf = _df(brows)
         if not bdf.empty:
@@ -525,13 +547,14 @@ elif page == "Lead Management":
                 "review_count": "Review", "industry_match": "Target",
             })
         st.caption(
-            f"Menampilkan {len(bdf)} dari {queries.table_count(_engine(), 'businesses') or len(bdf)}"
-            " bisnis (diurutkan terbaru)"
+            _window_caption(
+                len(bdf), queries.table_count(_engine(), "businesses"), "bisnis"
+            )
         )
         st.dataframe(bdf, use_container_width=True, hide_index=True)
 
     with tab_kontak:
-        k1, k2, k3 = st.columns([2, 2, 3])
+        k1, k2, k3, k4 = st.columns([2, 2, 3, 2])
         kind = k1.selectbox(
             "Jenis", ["any", "email", "phone", "social", "address"],
             key="kon_kind",
@@ -541,8 +564,12 @@ elif page == "Lead Management":
             key="kon_status",
         )
         kq = k3.text_input("Cari nilai kontak", "", key="kon_q")
+        klim = k4.selectbox(
+            "Tampilkan", [500, 1000, "Semua"], index=1, key="kon_rows"
+        )
         krows = queries.contacts_table(
-            _engine(), kind=kind, status=status, search=kq, limit=1000
+            _engine(), kind=kind, status=status, search=kq,
+            limit=None if klim == "Semua" else int(klim)
         )
         kdf = _df(krows)
         if not kdf.empty:
@@ -553,8 +580,9 @@ elif page == "Lead Management":
                 "confidence": "Conf", "source_kind": "Sumber",
             })
         st.caption(
-            f"Menampilkan {len(kdf)} dari {queries.table_count(_engine(), 'contacts') or len(kdf)}"
-            " kontak (diurutkan terbaru)"
+            _window_caption(
+                len(kdf), queries.table_count(_engine(), "contacts"), "kontak"
+            )
         )
         st.dataframe(kdf, use_container_width=True, hide_index=True)
 

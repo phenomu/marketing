@@ -639,7 +639,7 @@ def upsert_leads(engine: Engine, leads: list[dict]) -> dict:
 
 def list_leads(
     engine: Engine,
-    limit: int = 200,
+    limit: int | None = 200,
     min_score: int = 0,
     email_status: str | None = None,
 ) -> list[dict]:
@@ -662,8 +662,9 @@ def list_leads(
         .select_from(LEADS)
         .join(BUSINESSES, BUSINESSES.c.id == LEADS.c.business_id)
         .order_by(LEADS.c.score.desc())
-        .limit(limit)
     )
+    if limit is not None:
+        stmt = stmt.limit(limit)
     if min_score:
         stmt = stmt.where(LEADS.c.score >= min_score)
     if email_status:

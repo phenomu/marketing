@@ -80,7 +80,7 @@ def export_leads_csv(
     path: str | Path,
     min_score: int = 0,
     email_status: str | None = None,
-    limit: int = 500,
+    limit: int | None = 500,
 ) -> dict:
     """Write leads to CSV. Returns {rows, path}."""
     rows = list_leads(
@@ -99,7 +99,7 @@ def leads_csv_bytes(
     engine: Engine,
     min_score: int = 0,
     email_status: str | None = None,
-    limit: int = 500,
+    limit: int | None = 500,
 ) -> bytes:
     """Same CSV stream, in memory — used by the dashboard download button."""
     rows = list_leads(

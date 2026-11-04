@@ -87,7 +87,7 @@ def leads_table(
     min_score: int = 0,
     email_status: str = "any",
     lead_status: str = "any",
-    limit: int = 500,
+    limit: int | None = 500,
 ) -> list[dict]:
     """Lead management table with the same filters the CSV export uses."""
     try:
@@ -160,10 +160,11 @@ def businesses_table(
     source: str = "any",
     industry: str = "any",
     search: str = "",
-    limit: int = 500,
+    limit: int | None = 500,
 ) -> list[dict]:
     """Businesses browser for the KPI drill-down (source filter + name/
-    category/address search)."""
+    category/address search). limit=None returns every row (operator
+    'Tampilkan: Semua')."""
     try:
         stmt = select(
             BUSINESSES.c.id,
@@ -176,7 +177,9 @@ def businesses_table(
             BUSINESSES.c.rating,
             BUSINESSES.c.review_count,
             BUSINESSES.c.industry_match,
-        ).order_by(desc(BUSINESSES.c.id)).limit(limit)
+        ).order_by(desc(BUSINESSES.c.id))
+        if limit is not None:
+            stmt = stmt.limit(limit)
         if source != "any":
             stmt = stmt.where(BUSINESSES.c.source == source)
         if industry == "match":
@@ -199,9 +202,9 @@ def contacts_table(
     kind: str = "any",
     status: str = "any",
     search: str = "",
-    limit: int = 500,
+    limit: int | None = 500,
 ) -> list[dict]:
-    """Contact browser for the KPI drill-down."""
+    """Contact browser for the KPI drill-down. limit=None = unlimited."""
     try:
         stmt = select(
             CONTACTS.c.id,
@@ -211,7 +214,9 @@ def contacts_table(
             CONTACTS.c.status,
             CONTACTS.c.confidence,
             CONTACTS.c.source_kind,
-        ).order_by(desc(CONTACTS.c.id)).limit(limit)
+        ).order_by(desc(CONTACTS.c.id))
+        if limit is not None:
+            stmt = stmt.limit(limit)
         if kind != "any":
             stmt = stmt.where(CONTACTS.c.kind == kind)
         if status != "any":
