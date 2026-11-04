@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import Connection, Engine, desc, func, select
+from sqlalchemy import Connection, Engine, desc, func, select, text
 from sqlalchemy.engine import create_engine
 
 from app.db import (
@@ -294,6 +294,27 @@ def contacts_by_kind(engine: Engine) -> list[dict]:
             return _rows(conn, select(CONTACTS.c.kind, func.count().label("n")).group_by(CONTACTS.c.kind))
     except Exception as exc:  # noqa: BLE001
         return [{"error": str(exc)}]
+
+
+def table_count(engine: Engine, table: str, where: str = "") -> int | None:
+    """Exact row count for a browser caption (browser tables render a
+    capped window — LIMIT 1000 — so len(df) understates the true total
+    and looks like data is missing). Returns None on any error so the
+    caption falls back to the window count. `table` is whitelisted;
+    `where` is caller-built from validated filter values only (no user
+    text — search terms use bound parameters in the table queries)."""
+    allowed = {"contacts": CONTACTS, "businesses": BUSINESSES, "leads": LEADS}
+    t = allowed.get(table)
+    if t is None:
+        return None
+    try:
+        stmt = select(func.count()).select_from(t)
+        if where:
+            stmt = stmt.where(text(where))
+        with engine.connect() as conn:
+            return int(conn.execute(stmt).scalar() or 0)
+    except Exception:  # noqa: BLE001 — cosmetic caption, never fatal
+        return None
 
 
 def suppressions_table(engine: Engine) -> list[dict]:

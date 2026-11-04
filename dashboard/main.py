@@ -489,7 +489,10 @@ elif page == "Lead Management":
                 "category", "domain", "best_phone",
             ]]
         c_count, c_dl = st.columns([3, 1])
-        c_count.caption(f"{len(df)} lead")
+        c_count.caption(
+            f"Menampilkan {len(df)} dari {queries.table_count(_engine(), 'leads') or len(df)}"
+            " lead (diurutkan terbaru)"
+        )
         c_dl.download_button(
             "⬇ Download CSV",
             data=leads_csv_bytes(
@@ -521,7 +524,10 @@ elif page == "Lead Management":
                 "source": "Source", "rating": "Rating",
                 "review_count": "Review", "industry_match": "Target",
             })
-        st.caption(f"{len(bdf)} bisnis")
+        st.caption(
+            f"Menampilkan {len(bdf)} dari {queries.table_count(_engine(), 'businesses') or len(bdf)}"
+            " bisnis (diurutkan terbaru)"
+        )
         st.dataframe(bdf, use_container_width=True, hide_index=True)
 
     with tab_kontak:
@@ -546,7 +552,10 @@ elif page == "Lead Management":
                 "value": "Nilai", "status": "Status",
                 "confidence": "Conf", "source_kind": "Sumber",
             })
-        st.caption(f"{len(kdf)} kontak")
+        st.caption(
+            f"Menampilkan {len(kdf)} dari {queries.table_count(_engine(), 'contacts') or len(kdf)}"
+            " kontak (diurutkan terbaru)"
+        )
         st.dataframe(kdf, use_container_width=True, hide_index=True)
 
 
