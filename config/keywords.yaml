@@ -14,10 +14,16 @@
 queries:
   - kedai kopi
   - klinik gigi
+  - bakery
+  - laundry kilat
+  - barbershop
+  - gym
 locations:
-  - Yogyakarta
+  - Malang
   - Bandung
-max_results: 20
+  - Yogyakarta
+  - Surabaya
+max_results: 50
 
 # Contoh: matikan source default dan aktifkan serpapi + csv_import:
 # sources:

@@ -12,11 +12,20 @@ include:
   - kafe
   - cafe
   - coffee
+  - coffee shop
+  - bakery
+  - roti
+  - cake
+  - pastry
+  - barber
+  - barbershop
+  - salon
+  - fitness
+  - gym
   - klinik
   - dental
   - dentist
   - gigi
   - laundry
-  - laundry kilat
   - cuci
 exclude: []

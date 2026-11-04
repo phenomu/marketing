@@ -18,6 +18,10 @@ x-app-base: &app-base
   volumes:
     - ./logs:/app/logs
     - ./data:/app/data
+    # user-editable runtime config (keywords/industries) — the scheduler
+    # reloads it every tick, so edits on the host take effect without a
+    # rebuild. Prod compose keeps the baked copy.
+    - ./config:/app/config
   restart: unless-stopped
 
 services:
