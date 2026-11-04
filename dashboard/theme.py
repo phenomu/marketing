@@ -317,6 +317,55 @@ section[data-testid="stSidebar"] label[data-testid="stRadioOption"] > div:first-
 .nc-kpi .value.mint {{ color: var(--nc-mint); }}
 .nc-kpi .sub {{ font-size: 11.5px; color: var(--nc-text-3); font-family: var(--nc-font-mono); }}
 
+/* SweetAlert-style flash notification (parent DOM, pure CSS) */
+.nc-flash-wrap {{
+  position: fixed; top: 86px; right: 22px; z-index: 9999;
+  width: 340px; max-width: calc(100vw - 44px);
+  pointer-events: none;
+  animation: nc-flash-in 320ms cubic-bezier(0.21, 1.02, 0.73, 1) both;
+}}
+.nc-flash {{
+  position: relative; overflow: hidden;
+  display: flex; align-items: flex-start; gap: 12px;
+  background: rgba(16, 25, 42, 0.97);
+  border: 1px solid rgba(53, 211, 153, 0.45);
+  border-radius: 14px; padding: 14px 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 229, 255, 0.06);
+  animation: nc-flash-life 4.6s ease forwards;
+}}
+.nc-flash-err {{ border-color: rgba(251, 113, 133, 0.50); }}
+.nc-flash-icon {{
+  flex: 0 0 34px; height: 34px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700;
+  background: rgba(34, 247, 165, 0.12); color: var(--nc-mint);
+  border: 1px solid rgba(34, 247, 165, 0.35);
+}}
+.nc-flash-err .nc-flash-icon {{
+  background: rgba(251, 113, 133, 0.12); color: var(--nc-error);
+  border-color: rgba(251, 113, 133, 0.40);
+}}
+.nc-flash-title {{ font-size: 13.5px; font-weight: 700; color: var(--nc-text-1); }}
+.nc-flash-msg {{ font-size: 12px; color: var(--nc-text-2); margin-top: 2px; line-height: 1.45; }}
+.nc-flash-bar {{
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+  background: linear-gradient(90deg, var(--nc-mint), var(--nc-cyan));
+  transform-origin: left;
+  animation: nc-flash-drain 4.4s linear forwards;
+}}
+.nc-flash-err .nc-flash-bar {{
+  background: linear-gradient(90deg, var(--nc-error), #FBBF24);
+}}
+@keyframes nc-flash-in {{
+  from {{ opacity: 0; transform: translateX(30px) scale(0.96); }}
+  to {{ opacity: 1; transform: translateX(0) scale(1); }}
+}}
+@keyframes nc-flash-life {{
+  0%, 84% {{ opacity: 1; transform: none; }}
+  100% {{ opacity: 0; transform: translateY(-8px); }}
+}}
+@keyframes nc-flash-drain {{ from {{ transform: scaleX(1); }} to {{ transform: scaleX(0); }} }}
+
 /* KPI grid rendered directly in the parent DOM (anchor cards) */
 .nc-kpi-grid {{
   display: grid; gap: 12px;
@@ -748,3 +797,28 @@ def side_status(rows: list[tuple[str, str]]) -> str:
 def docs_note(text: str) -> str:
     """Docs page source banner (rendered above the tabs)."""
     return f'<div class="nc-docs-note">{esc(text)}</div>'
+
+
+def flash_alert(kind: str, title: str, message: str) -> str:
+    """SweetAlert-style modal notification, rendered in the PARENT DOM
+    (st.markdown) right after an action survives st.rerun() via a
+    session_state flash flag — st.success() dies instantly because the
+    rerun on the next line clears the frame before it is drawn.
+
+    Pure CSS: auto-dismiss animation (progress bar drains ~4.5s, card
+    fades out, pointer-events end). kind: ok|err. No JS — st.markdown
+    sanitizes script tags; no click-to-close (auto only)."""
+    icon = "✓" if kind == "ok" else "✕"
+    cls = "ok" if kind == "ok" else "err"
+    return f"""
+<div class="nc-flash-wrap" role="status">
+  <div class="nc-flash nc-flash-{cls}">
+    <div class="nc-flash-icon">{icon}</div>
+    <div class="nc-flash-body">
+      <div class="nc-flash-title">{esc(title)}</div>
+      <div class="nc-flash-msg">{esc(message)}</div>
+    </div>
+    <div class="nc-flash-bar"></div>
+  </div>
+</div>
+"""

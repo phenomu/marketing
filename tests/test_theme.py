@@ -235,3 +235,31 @@ class TestDocsReader:
         for needle in ("Memulai", "Tambah job", "Enqueue job", "DRY RUN",
                        "placeholder", "unsubscri"):
             assert needle.lower() in md.lower(), f"guide missing usage doc: {needle}"
+
+
+class TestFlashAlert:
+    """theme.flash_alert — SweetAlert-style modal (parent DOM, CSS-only)."""
+
+    def test_ok_card_structure(self):
+        html = theme.flash_alert("ok", "Job #13 masuk antrian", "worker memproses ±30s")
+        assert 'class="nc-flash nc-flash-ok"' in html
+        assert "Job #13 masuk antrian" in html
+        assert "worker memproses" in html
+        assert 'role="status"' in html
+        assert "✓" in html
+
+    def test_err_card_structure(self):
+        html = theme.flash_alert("err", "Gagal enqueue job", "Error: boom")
+        assert 'class="nc-flash nc-flash-err"' in html
+        assert "✕" in html
+        assert "Error: boom" in html
+
+    def test_message_is_escaped(self):
+        html = theme.flash_alert("ok", "t", "<script>alert(1)</script>")
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_css_keyframes_present(self):
+        css = theme.theme_css()
+        for kf in ("nc-flash-in", "nc-flash-life", "nc-flash-drain"):
+            assert kf in css, f"missing keyframes: {kf}"

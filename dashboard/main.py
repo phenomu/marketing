@@ -96,6 +96,26 @@ if _query_token:
 
 st.markdown(theme.theme_css(), unsafe_allow_html=True)
 
+# Flash notification (SweetAlert-style): survives st.rerun() via a
+# session_state flag. st.success/st.error placed right before an
+# st.rerun() never renders — the rerun clears the frame before the
+# browser paints it. The flag is consumed one render later and the
+# modal auto-dismisses via CSS animation.
+if "nc_flash" in st.session_state:
+    _f = st.session_state.pop("nc_flash")
+    st.markdown(
+        theme.flash_alert(_f["kind"], _f["title"], _f["message"]),
+        unsafe_allow_html=True,
+    )
+
+
+def flash(kind: str, title: str, message: str) -> None:
+    """Queue a flash modal for the NEXT render, then rerun."""
+    st.session_state["nc_flash"] = {
+        "kind": kind, "title": title, "message": message
+    }
+    st.rerun()
+
 PAGES = [
     "Overview",
     "Lead Discovery",
@@ -420,16 +440,19 @@ elif page == "Lead Discovery":
                         _engine(), source, query.strip(),
                         location.strip(), int(max_results)
                     )
-                    st.success(
-                        f"Job #{job_id} pending — worker proses tick "
-                        "berikutnya."
+                    flash(
+                        "ok",
+                        f"Job #{job_id} masuk antrian",
+                        f"\"{query.strip()}\" ({source}) pending — worker "
+                        "memproses ±30s. Tabel job di bawah sudah "
+                        "ter-update.",
                     )
-                    # rerun immediately so the Discovery-jobs tab shows
-                    # the new pending row without a manual page refresh
-                    # (form submissions re-render only the form block)
-                    st.rerun()
                 except Exception as exc:  # noqa: BLE001
-                    st.error(f"Gagal: {exc}")
+                    flash(
+                        "err",
+                        "Gagal enqueue job",
+                        f"Error: {exc}",
+                    )
 
 
 # --- Lead Management ---------------------------------------------------------
